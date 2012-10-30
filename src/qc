@@ -1,0 +1,540 @@
+#!/usr/bin/perl
+
+# "Quietly Confident
+# plain simple git-aware static site generator
+# by TLINDEN <tlinden@cpan.org>
+# http://www.daemon.de/QuietlyConfident
+
+our $VERSION = '0.01';
+
+sub path2public {
+	# convert a given physical source path
+	# to output path without numbering, special chars etc
+	my ($path, $isfile) = @_;
+	my @out;
+	$path =~ s/^\.\///;  # remove ./
+	foreach my $part (split /\//, $path) {
+		$part =~ s/^\d*[\.\-_ ]*//;    # remove leading number
+		$part =~ s/([^\w\.])/_/g;      # non word to dash
+		$part =~s/([A-Z])/lc($1)/ge;   #  lowercase for urls
+		push @out, $part;
+	}
+	my $normalized = join '/', @out;
+	if($isfile) {
+		$normalized =~ s/index\.[a-zA-Z]*$//;
+		$normalized =~ s/\.[a-zA-Z]*$/\//;
+	}
+	return $normalized;
+}
+
+package Gitdir;
+use Moo;
+use Sub::Quote;
+use Data::Dumper;
+
+has path => (
+        is => 'rw'
+);
+
+has hasindex => (
+        is => 'rw'
+);
+
+has hasfiles => (
+        is => 'rw'
+);
+
+has level => (
+        is => 'rw'
+);
+
+has hasdirs => (
+        is => 'rw'
+);
+
+has files => (
+        is => 'rw'
+);
+
+has dirs => (
+        is => 'rw'
+);
+
+sub caption {
+	my $self = shift;
+	my $cap = $self->path;
+	$cap =~ s/.*\///;           # remove leading path parts
+	$cap =~ s/^\d*[\.\-_ ]*//;  # remove leading number
+	$cap =~ s/[\.\-_ ]*/ /;     # punctuation to space
+	$cap =~ s/^\s*//;
+	chomp $cap;
+	return $cap;
+}
+
+sub dstpath {
+	my $self = shift;
+	return main::path2public($self->path);
+}
+
+sub htmlpath {
+	my $self = shift;
+	return main::path2public($self->path) . '/';
+}
+
+sub indexpath {
+	# only used for nonexistent index.html outputs
+	my $self = shift;
+	return $self->dstpath . '/index.html';
+}
+
+sub menu {
+	my $self = shift;
+	my @objects = @{$self->dirs};
+
+	push @objects, grep { ! $_->isindex } @{$self->files};
+	
+	my @menu = map { { href => $_->htmlpath, cap => $_->caption } } sort { $a->path cmp $b->path } @objects;
+	return @menu;
+}
+
+1;
+#####################################
+
+package Gitfile;
+use Moo;
+use Sub::Quote;
+use Text::Markdown 'markdown';
+use Pod::Html;
+
+has path => (
+        is => 'rw'
+);
+
+has type => (
+        is => 'rw'
+);
+
+has date => (
+        is => 'rw'
+);
+
+has by => (
+        is => 'rw'
+);
+
+has raw => (
+        is => 'rw'
+);
+
+has git => (
+        is => 'rw'
+);
+
+has isindex => (
+        is => 'rw'
+);
+
+has config => (
+        is => 'rw'
+);
+
+sub realpath {
+	my $self = shift;
+	return $self->config->{repository} . '/' . $self->path;
+}
+
+sub filename {
+	my $self = shift;
+	my $path = $self->path;
+	$path =~ s/.*\///;
+	return $path;
+}
+
+sub cleanhtml {
+	# remove headers and styling
+	my ($self, $html) = @_;
+	$html =~ s/<head>.*?<\/head>//sig;
+	$html =~ s/<(span|font|html|body).*?>//sig;
+	$html =~ s/<\/(font|span|html|body)>//sig;
+	$html =~ s/class=[\w]*//gis;
+	$html =~ s/(style|class)=(\"|\').*?(\"|\')//sig;
+
+	# remove Microsoft artifacts
+	$html =~ s/<o:p>[^<]*<\/o:p>//sig;
+	$html =~ s/<p\s*>\s*<\/p>//sig;
+	# <![if !supportLists]>
+	$html =~ s/<\!?\[[^\]]*\]>//sig;
+	return $html;
+}
+
+sub content {
+        my $self = shift;
+	my ($html, $raw);
+	if($self->raw) {
+		$raw = $self->raw;
+	}
+	else {
+		my $path = $self->realpath;
+        	open RAW, "<$path" or return die "Could not open $path: $!";
+        	$raw = join '', <RAW>;
+        	close RAW;
+		$self->raw($raw);
+	}
+        if($self->type eq 'markdown') {
+                $html = markdown($raw);
+        }
+	elsif($self->type eq 'html') {
+		$html = $self->cleanhtml($raw);
+	}
+	elsif($self->type eq 'pod') {
+		open POD, "pod2html " . $self->realpath . "|";
+		my $raw = join '', <POD>;
+		close POD;
+		$html = $self->cleanhtml($raw);
+	}
+        else {
+                $html = $raw;
+        }
+
+	$html =~ s/(src=")(?<!http)([^"]*)(")/$1 . $self->config->{media} . $2 . $3/ges;
+
+	return $html;
+}
+
+sub description {
+	my $self = shift;
+	my $html = $self->content;
+	my $des = "";
+	if($html =~ /<p>([^<]*)<\/p>/s) {
+		$des = $1;
+		$des =~ s/<\/?[^>]*//s;
+	}
+	return $des;
+}
+
+sub keywords {
+	my $self = shift;
+	my $des = $self->description;
+	my @words = grep { length($_) > 5 } split /\s\s*/, $des;
+	return join ',', @words;
+}
+
+sub caption {
+	my $self = shift;
+	my $cap = $self->path;
+	$cap =~ s/.*\///;           # remove leading path parts
+	$cap =~ s/\.[^\.]*$//;      # remove suffix
+	$cap =~ s/^\d*[\.\-_ ]*//;  # remove leading number
+	$cap =~ s/[\.\-_ ]*/ /;     # punctuation to space
+	$cap =~ s/^\s*//;
+	chomp $cap;
+	return $cap;
+}
+
+sub dstpath {
+	# physical destination file
+        my $self = shift;
+	my $out  = main::path2public($self->path, 1);
+	return $out . "index.html";
+}
+
+sub htmlpath {
+	# used for links
+	my $self = shift;
+	my $out  = main::path2public($self->path, 1);
+	return $out;
+}
+
+sub basepath {
+	# dir one level above
+	my $self = shift;
+	my $out  = main::path2public($self->path, 1);
+	$out     =~ s/\/[^\/]*\/$/\//;
+	return $out;
+}
+
+#####################################
+
+package main;
+
+use Git::Repository;
+use Git::Repository 'Log';
+use Config::General qw(ParseConfig);
+use File::Path qw(make_path);
+use Shell qw(cp);
+use Template;
+use Data::Dumper;
+use HTTP::Server::Brick;
+
+my %types = qw(jpg image png image jpeg image gif image txt markdown md markdown html html htm html pod pod);
+my %config;
+my %menu;
+my @images;
+my $git;
+my $command = shift;
+
+if(! $command) {
+	$command = "usage";
+}
+
+if(-e "qc.conf") {
+	%config = ParseConfig(-ConfigFile => "qc.conf", -AutoTrue => 1);
+}
+else {
+	if($command ne "init") {
+		die "Could not open config file qc.conf!\nConsider running $0 init\n";
+	}
+}
+
+no strict "refs";
+my @allowed = qw(init generate serve);
+if(! grep { $command eq $_ } @allowed) {
+	print "Unknown command $command!\n";
+	print "$@\n";
+	&usage;
+}
+
+&$command;
+
+
+
+sub generate {
+	eval {
+		$git = Git::Repository->new( work_tree => $config{repository} ) or die "Could not init git: $!\n";
+	};
+	if($@) {
+		if(! $config{local}) {
+			die $@;
+		}
+		else {
+			$@ = '';
+		}
+	}
+	my $pwd = `pwd`;
+	chomp $pwd;
+	chdir $config{repository};
+
+	my $root = &iterate('.', 1);
+	chdir $pwd;
+
+	&genmenus($root);
+
+	&process($root);
+
+	make_path($config{mediapath}, { mode => 0755, verbose => 1 });
+
+	foreach my $img (@images) {
+		my $src = $img->realpath;
+		my $dst = $config{mediapath} . $img->filename;
+		if (! -e $dst ) {
+			print "$src => $dst\n";
+			cp ($src, $dst);
+		}
+		else {
+			my $mtime = (stat($dst))[9];
+			if($img->date > $mtime) {
+				print "$src => $dst\n";
+				cp ($src, $dst);
+			}
+		}
+	}
+}
+
+sub genmenus {
+	my $gitdir = shift;
+	my $level = $gitdir->level;
+	my @menu = $gitdir->menu;
+
+	my $path = $gitdir->htmlpath;
+	if($path eq '/') {
+		$path = "root";
+	}
+	$menu{$path} = \@menu;
+	foreach my $dir (@{$gitdir->dirs}) {
+		&genmenus($dir);
+	}
+}
+
+
+sub process {
+	my $gitdir = shift;
+
+	my $dir    = "$config{public}/" . $gitdir->dstpath;
+
+	if(! -d "$dir" ) {
+		make_path("$dir", { mode => 0755, verbose => 1 });
+	}
+	my $t = Template->new({ OUTPUT_PATH => $config{public}, INCLUDE_PATH => $config{templates}, INTERPOLATE  => 1 }) || die "$Template::ERROR\n";
+
+	foreach my $gitfile (@{$gitdir->files}) {
+		my $title = $gitfile->caption;
+		if($gitdir->level == 1  && $gitfile->isindex) {
+			$title = $config{sitetitle};
+		}
+		elsif($gitfile->isindex) {
+			$title = $gitdir->caption;
+		}
+		print "Processing: " . $gitfile->htmlpath . " => " . $gitfile->dstpath . "\n";
+		$t->process( 'page.tpl', { config => \%config,
+					   basepath => $gitfile->basepath,
+					   level => $gitdir->level,
+					   menu => \%menu,
+					   content => $gitfile->content,
+					   keywords => $gitfile->keywords,
+					   description => $gitfile->description,
+					   title => $title }, $gitfile->dstpath) or die $t->error() . "\n";
+	}
+
+	if(! $gitdir->hasindex) {
+		print "Processing: " . $gitdir->indexpath . "\n";
+		$t->process( 'page.tpl', { config => \%config,
+					   basepath => $gitdir->htmlpath, 
+					   level => $gitdir->level, 
+					   menu => \%menu, 
+					   content => '', 
+					   title => $gitdir->caption }, $gitdir->indexpath) or die $t->error() . "\n";
+	}
+
+	if( $gitdir->hasdirs) {
+		foreach my $dir (@{$gitdir->dirs}) {
+			&process($dir);
+		}
+	}
+}
+
+
+
+
+
+sub type {
+	my $file = shift;
+	if($file =~ /\.([^\.]*)$/i) {
+		my $suffix = $1;
+		if (exists $types{$suffix}) {
+			return $types{$suffix};
+		}
+	}
+	return 'unknown';
+}
+
+sub iterate {
+	my($dir, $level) = @_;
+	my $gitdir = Gitdir->new( files => [], dirs => [], hasindex => 0, hasdirs => 0, hasfiles => 0, level => $level );
+	my $dirpath = $dir;
+	$dirpath =~ s/^\.\///;
+	$gitdir->path($dirpath);
+	opendir D, $dir;
+	foreach my $file (readdir D) {
+		next if ($file =~ /^\./);
+		if(-d "$dir/$file" ) {
+			push @{$gitdir->{dirs}}, &iterate("$dir/$file", $level + 1);
+			$gitdir->hasdirs(1);
+		}
+		else {
+			my $path = "$dir/$file";
+			$path =~ s/^\.\///;
+			my $log;
+			eval { ($log) = Git::Repository->log( '-1', "$dir/$file" ) };
+			$@ = '';
+			my $gitfile;
+			if($log) {
+				$gitfile = Gitfile->new( path => $path,
+							    config => \%config,
+					                    type   => &type($file),
+					                    date   => $log->committer_localtime,
+					                    by     => $log->committer_name );
+			}
+			else {
+				# not part of git, but use it if local option is set
+				if($config{local}) {
+					my $mtime = (stat($path))[9];	
+					my $owner = getpwuid((stat($path))[4]);
+
+					$gitfile = Gitfile->new( path   => $path,
+								 config => \%config,
+								 type   => &type($file),
+								 date   => $mtime,
+								 by     => $owner );
+				}
+			}
+			if($gitfile) {
+				$gitdir->hasfiles(1);
+				if($file =~ /^index\.(md|html|htm)$/) {
+					$gitdir->hasindex(1);
+					$gitfile->isindex(1);
+				}
+				if($gitfile->type eq 'image') {
+					push @images, $gitfile;
+				}
+				else {
+					push @{$gitdir->{files}}, $gitfile;
+				}
+			}
+		}
+	}
+	close D;
+
+	return $gitdir;
+}
+
+
+sub usage {
+	print qq(
+Usage: $0 <command>
+
+Avalable commands are:
+ init      - initialize a new site
+ generate  - generate static content from repository
+ serve     - serve site on *.8080
+
+);
+	exit 1;
+}
+
+
+sub init {
+        print "Creating qc.conf\n";
+        open C, ">qc.conf" or die "Could not open qc.conf: $!\n";
+        print C qq(
+#        
+# config file for qc tool
+repository = source
+public     = public_html
+templates  = templates
+sitetitle  = Gitweb Static Site
+baseuri    = /
+media      = /images/
+mediapath  = public_html/images/
+local      = yes
+);       
+        close C;
+         
+        print "Creating directories\n";
+        foreach my $dir (qw(source public_html templates public_html)) {
+                make_path($dir, { mode => 0755, verbose => 1 });
+        }
+         
+        print "Creating basic templates\n";
+        my $data = join "", <DATA>;
+        $data =~ s/^begin \d{3} IGNORE\n//;
+        $data =~ s/end$//;
+        my $zipfile = unpack("u", $data);
+         
+        open Z, ">init.zip" or die "Could not extract initialization data: $!\n";
+        print Z $zipfile;
+        close Z;
+         
+        system("unzip -q init.zip") and die "Could not unzip init data: $!\n";
+        unlink "init.zip";
+
+        print "Creating static site\n";
+        %config = ParseConfig(-ConfigFile => 'qc.conf', -AutoTrue => 1);
+}
+
+sub serve {
+	my $httpd = HTTP::Server::Brick->new(port=>8080);
+	$httpd->mount('/' => { path => $config{public}});
+	$httpd->start;
+}
+
+__DATA__
