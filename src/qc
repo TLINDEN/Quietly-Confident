@@ -537,4 +537,48 @@ sub serve {
 	$httpd->start;
 }
 
+sub daemon {
+	my $pwd = `pwd`;
+	chomp $pwd;
+	chdir $config{repository};
+
+	eval {
+		my $log = Git::Repository->log( '-1' );
+	};
+	if($@) {
+		print STDERR "$config{repository} is not a git repository!\n";
+		exit 1;
+	}
+	my $pid = fork();
+	if($pid) {
+		$SIG{CHLD} = sub { wait; };
+		exit 0;
+	}
+
+	# child here
+	setsid();
+	chdir $pwd;
+	my $pidfile = "qc.pid";
+	if($config{pidfile}) {
+		$pidfile = $config{pidfile};
+	}
+	open P, ">$pidfile" or die "Could not open $pidfile: $!\n"; # FIXME: add syslog instead
+	print P "$pid\n";
+	close P;
+
+	my $waitedpid = 0;
+	$SIG{CHLD} = \&REAPER;
+	$SIG{INT}  = sub { exit; };
+	$SIG{TERM} = 'IGNORE';
+
+	while (1) {
+		# FIXME: use git to see if remote repository changed, pull and re-generate
+	}
+}
+
+sub REAPER {
+        $waitedpid = wait;
+        $SIG{CHLD} = \&REAPER;
+}
+
 __DATA__
