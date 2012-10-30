@@ -195,6 +195,7 @@ is a General Systems Vehicle with the name **Sleeper Service** which
 first occurred in [Excession](http://en.wikipedia.org/wiki/Excession).
 The ships name is not the original one however, it renamed itself sometime.
 The original name before renaming were - you guess it - **Quietly Confidence**.
+In addition the abbreviation **qc** gives a cool and short command as well.
 
 So. I named my tool like a spaceship in honor to the said ship, which
 I liked very much, and in honor to Ian Banks who created one of the
