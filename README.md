@@ -13,8 +13,8 @@ textfiles as sources in the following formats:
   simple format and widely known among perl developers.
 
 * HTML. You may just put HTML files as source. **Quietly Confident**
-  will remove anything not needed as: anything between <head>..</head>,
-  <html> and <body> tags. It will also remove any <font> or <span> tags
+  will remove anything not needed as: anything between `<head>..</head>`,
+  `<html>` and `<body>` tags. It will also remove any `<font>` or `<span>` tags
   and any occurence of *style* or *class* attributes. This conversion
   enables you to use the HTML output produced by MS Word. Just in case,
   not that I encourage you to do so :)
@@ -193,8 +193,8 @@ I'm a huge fan of Ian Banks *The Culture* series. The stories are
 especially famous for its spaceship naming scheme. One of those ships
 is a General Systems Vehicle with the name **Sleeper Service** which
 first occurred in [Excession](http://en.wikipedia.org/wiki/Excession).
-The ships name is not the original one however, it renamed itself sometimes.
-The original name if it were - you guess it - **Quietly Confidence**.
+The ships name is not the original one however, it renamed itself sometime.
+The original name before renaming were - you guess it - **Quietly Confidence**.
 
 So. I named my tool like a spaceship in honor to the said ship, which
 I liked very much, and in honor to Ian Banks who created one of the
@@ -206,7 +206,7 @@ wikipedia page: [GSV Sleeper Service](http://en.wikipedia.org/wiki/GSV_Sleeper_S
 # Bugs and issues
 
 One might assume that the version number **0.01** suggests that
-the tool is in a quite early stage. Well, that*s right. Just file
+the tool is in a quite early stage. Well, that's right. Just file
 an issue at Github if you find a bug or think it doesn't behave
 as predicted. Patches are most welcome though.
 
