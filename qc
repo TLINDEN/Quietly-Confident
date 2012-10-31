@@ -5,7 +5,7 @@
 # by TLINDEN <tlinden@cpan.org>
 # http://www.daemon.de/QuietlyConfident
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 sub path2public {
 	# convert a given physical source path
