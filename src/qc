@@ -5,7 +5,7 @@
 # by TLINDEN <tlinden@cpan.org>
 # http://www.daemon.de/QuietlyConfident
 
-our $VERSION = '0.01';
+our $VERSION = '0.03';
 
 sub path2public {
 	# convert a given physical source path
@@ -16,7 +16,7 @@ sub path2public {
 	foreach my $part (split /\//, $path) {
 		$part =~ s/^\d*[\.\-_ ]*//;    # remove leading number
 		$part =~ s/([^\w\.])/_/g;      # non word to dash
-		$part =~s/([A-Z])/lc($1)/ge;   #  lowercase for urls
+		$part =~s/([A-Z])/lc($1)/ge;   # lowercase for urls
 		push @out, $part;
 	}
 	my $normalized = join '/', @out;
@@ -245,6 +245,26 @@ sub htmlpath {
 	return $out;
 }
 
+sub blogpath {
+	# used for blog entries
+	my $self = shift;
+	my $out  = main::path2public($self->path, 1);
+	$out =~ s/^blog[^\/]*//;
+	$out =~ s/\///g;
+	my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime($self->date);
+	$mon++;
+	$year += 1900;
+	$out = sprintf "blog/%04d/%02d/%02d/$out/", $year, $mon, $mday;
+	return $out;
+}
+
+sub dstblogpath {
+	# physical destination file
+        my $self = shift;
+	my $out  = $self->blogpath;
+	return $out . "index.html";
+}
+
 sub basepath {
 	# dir one level above
 	my $self = shift;
@@ -356,64 +376,169 @@ sub generate {
 
 sub genmenus {
 	my $gitdir = shift;
-	my $level = $gitdir->level;
-	my @menu = $gitdir->menu;
+	my $level  = $gitdir->level;
+	my @menu   = $gitdir->menu;
 
 	my $path = $gitdir->htmlpath;
 	if($path eq '/') {
 		$path = "root";
 	}
+
+	if ($gitdir->dstpath =~ /^blog/) {
+	  $menu{$path} = [];
+	  return;
+	}
+
 	$menu{$path} = \@menu;
 	foreach my $dir (@{$gitdir->dirs}) {
 		&genmenus($dir);
 	}
 }
 
+sub processblog {
+  my $gitdir = shift;
+  my @posts = sort { $b->date <=> $a->date } @{$gitdir->files};
+  my $max = 5;
+  my @pages;
+  if (scalar @posts > $max) {
+    while (@posts) {
+      my $curlen = scalar @posts;
+      my @page;
+      if ($curlen >= $max) {
+	@page = splice(@posts, 0, $max);
+      }
+      else {
+	@page = splice(@posts, 0);
+      }
+      push @pages, \@page;
+    }
+  }
+  else {
+    push @pages, \@posts;
+  }
+  
+
+  my $t = Template->new(
+			{ OUTPUT_PATH  => $config{public},
+			  INCLUDE_PATH => $config{templates},
+			  INTERPOLATE  => 1 }) || die "$Template::ERROR\n";
+  my $pagenum = 0;
+  foreach my $page (@pages) {
+    my $dir = $gitdir->dstpath;
+    if ($pagenum > 0) {
+      $dir .= "/page/$pagenum";
+    }
+    if(! -d "$config{public}/$dir" ) {
+      make_path("$config{public}/$dir", { mode => 0755, verbose => 1 });
+    }
+
+    my $file = $dir . "/index.html";
+
+    my $prev = "page/" . ($pagenum - 1) . "/";
+    my $next = "page/" . ($pagenum + 1) . "/";
+    if ($pagenum == 0) {
+      $prev = "";
+    }
+    if ($pagenum == $#pages) {
+      $next = "";
+    }
+    if ($pagenum == 1) {
+      $prev = "../..";
+    }
+
+    &log( "Processing: blog index page $pagenum => $file in $dir");
+    $t->process( 'blog.tpl', { config      => \%config,
+			       posts       => $page,
+			       prev        => $prev,
+			       next        => $next,
+			       menu        => \%menu,
+			       level       => $gitdir->level,
+			       basepath    => $gitdir->htmlpath,
+			       keywords    => $page->[0]->keywords,
+			       description => $page->[0]->description,
+			       title       => $page->[0]->caption }, $file) or die $t->error() . "\n";
+
+    if ($pagenum == 0) {
+      $dir  .= "/feed/";
+      $file = $dir . "atom.xml";
+      &log( "Processing: blog feed => $file in $dir");
+      $t->process( 'atom.tpl', { config      => \%config,
+				 posts       => $page,
+				 updated     => $page->[0]->date,
+			       }, $file) or die $t->error() . "\n";
+    }
+
+    foreach my $post (@{$page}) {
+      &log( "Processing: blog post page " . $post->blogpath);
+      
+      $t->process( 'post.tpl', { config      => \%config,
+				 post        => $post,
+				 menu        => \%menu,
+				 level       => $gitdir->level,
+				 basepath    => $post->basepath,
+				 keywords    => $post->keywords,
+				 description => $post->description,
+				 title       => $post->caption }, $post->dstblogpath) or die $t->error() . "\n";
+    }
+    $pagenum++;
+  }
+}
+
 
 sub process {
-	my $gitdir = shift;
+  my $gitdir = shift;
 
-	my $dir    = "$config{public}/" . $gitdir->dstpath;
+  my $dir    = "$config{public}/" . $gitdir->dstpath;
 
-	if(! -d "$dir" ) {
-		make_path("$dir", { mode => 0755, verbose => 1 });
-	}
-	my $t = Template->new({ OUTPUT_PATH => $config{public}, INCLUDE_PATH => $config{templates}, INTERPOLATE  => 1 }) || die "$Template::ERROR\n";
+  if(! -d "$dir" ) {
+    make_path("$dir", { mode => 0755, verbose => 1 });
+  }
 
-	foreach my $gitfile (@{$gitdir->files}) {
-		my $title = $gitfile->caption;
-		if($gitdir->level == 1  && $gitfile->isindex) {
-			$title = $config{sitetitle};
-		}
-		elsif($gitfile->isindex) {
-			$title = $gitdir->caption;
-		}
-		&log( "Processing: " . $gitfile->htmlpath . " => " . $gitfile->dstpath);
-		$t->process( 'page.tpl', { config => \%config,
-					   basepath => $gitfile->basepath,
-					   level => $gitdir->level,
-					   menu => \%menu,
-					   content => $gitfile->content,
-					   keywords => $gitfile->keywords,
-					   description => $gitfile->description,
-					   title => $title }, $gitfile->dstpath) or die $t->error() . "\n";
-	}
+  if ($gitdir->dstpath =~ /^blog/) {
+    &processblog($gitdir);
+    return;
+  }
 
-	if(! $gitdir->hasindex) {
-		&log( "Processing: " . $gitdir->indexpath );
-		$t->process( 'page.tpl', { config => \%config,
-					   basepath => $gitdir->htmlpath, 
-					   level => $gitdir->level, 
-					   menu => \%menu, 
-					   content => '', 
-					   title => $gitdir->caption }, $gitdir->indexpath) or die $t->error() . "\n";
-	}
+  my $t = Template->new(
+			{ OUTPUT_PATH  => $config{public},
+			  INCLUDE_PATH => $config{templates},
+			  INTERPOLATE  => 1 }) || die "$Template::ERROR\n";
+  
+  foreach my $gitfile (@{$gitdir->files}) {
+    my $title = $gitfile->caption;
+    if($gitdir->level == 1  && $gitfile->isindex) {
+      $title = $config{sitetitle};
+    }
+    elsif($gitfile->isindex) {
+      $title = $gitdir->caption;
+    }
 
-	if( $gitdir->hasdirs) {
-		foreach my $dir (@{$gitdir->dirs}) {
-			&process($dir);
-		}
-	}
+    &log( "Processing: " . $gitfile->htmlpath . " => " . $gitfile->dstpath);
+    $t->process( 'page.tpl', { config => \%config,
+			       basepath => $gitfile->basepath,
+			       level => $gitdir->level,
+			       menu => \%menu,
+			       content => $gitfile->content,
+			       keywords => $gitfile->keywords,
+			       description => $gitfile->description,
+			       title => $title }, $gitfile->dstpath) or die $t->error() . "\n";
+  }
+  
+  if(! $gitdir->hasindex) {
+    &log( "Processing: " . $gitdir->indexpath );
+    $t->process( 'page.tpl', { config => \%config,
+			       basepath => $gitdir->htmlpath, 
+			       level => $gitdir->level, 
+			       menu => \%menu, 
+			       content => '', 
+			       title => $gitdir->caption }, $gitdir->indexpath) or die $t->error() . "\n";
+  }
+  
+  if( $gitdir->hasdirs) {
+    foreach my $dir (@{$gitdir->dirs}) {
+      &process($dir);
+    }
+  }
 }
 
 

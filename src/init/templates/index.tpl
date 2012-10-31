@@ -1,3 +1,4 @@
+[% USE date %]
 <!DOCTYPE html>
 <html lang="de">
   <!-- source: http://bootswatch.com/slate/ -->
@@ -22,6 +23,7 @@
     <script src="/js/jquery.js"></script>
     <script src="/js/bootstrap.js"></script>
     -->
+   [% PROCESS header %]
   </head>
 
 <body>

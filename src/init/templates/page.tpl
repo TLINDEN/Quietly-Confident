@@ -2,3 +2,5 @@
 [% BLOCK main %]
 [% content %]
 [% END %]
+[% BLOCK header %]
+[% END %]
