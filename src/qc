@@ -265,6 +265,7 @@ use Shell qw(cp);
 use Template;
 use Data::Dumper;
 use HTTP::Server::Brick;
+use POSIX qw( WNOHANG setsid );
 
 my %types = qw(jpg image png image jpeg image gif image txt markdown md markdown html html htm html pod pod);
 my %config;
@@ -272,9 +273,24 @@ my %menu;
 my @images;
 my $git;
 my $command = shift;
+my $workdir = shift;
 
 if(! $command) {
 	$command = "usage";
+}
+
+if($workdir) {
+	if (! -d $workdir) {
+		print STDERR "workdir $workdir does not exist or is not accessible!\n";
+		exit 1;
+	}
+	else {
+		chdir $workdir;
+	}
+}
+else {
+	$workdir = `pwd`;
+	chomp $workdir;
 }
 
 if(-e "qc.conf") {
@@ -287,7 +303,7 @@ else {
 }
 
 no strict "refs";
-my @allowed = qw(init generate serve);
+my @allowed = qw(daemon init generate serve);
 if(! grep { $command eq $_ } @allowed) {
 	print "Unknown command $command!\n";
 	print "$@\n";
@@ -310,12 +326,10 @@ sub generate {
 			$@ = '';
 		}
 	}
-	my $pwd = `pwd`;
-	chomp $pwd;
 	chdir $config{repository};
 
 	my $root = &iterate('.', 1);
-	chdir $pwd;
+	chdir $workdir;
 
 	&genmenus($root);
 
@@ -327,13 +341,13 @@ sub generate {
 		my $src = $img->realpath;
 		my $dst = $config{mediapath} . $img->filename;
 		if (! -e $dst ) {
-			print "$src => $dst\n";
+			&log( "$src => $dst\n");
 			cp ($src, $dst);
 		}
 		else {
 			my $mtime = (stat($dst))[9];
 			if($img->date > $mtime) {
-				print "$src => $dst\n";
+				&log("$src => $dst\n");
 				cp ($src, $dst);
 			}
 		}
@@ -374,7 +388,7 @@ sub process {
 		elsif($gitfile->isindex) {
 			$title = $gitdir->caption;
 		}
-		print "Processing: " . $gitfile->htmlpath . " => " . $gitfile->dstpath . "\n";
+		&log( "Processing: " . $gitfile->htmlpath . " => " . $gitfile->dstpath);
 		$t->process( 'page.tpl', { config => \%config,
 					   basepath => $gitfile->basepath,
 					   level => $gitdir->level,
@@ -386,7 +400,7 @@ sub process {
 	}
 
 	if(! $gitdir->hasindex) {
-		print "Processing: " . $gitdir->indexpath . "\n";
+		&log( "Processing: " . $gitdir->indexpath );
 		$t->process( 'page.tpl', { config => \%config,
 					   basepath => $gitdir->htmlpath, 
 					   level => $gitdir->level, 
@@ -480,12 +494,13 @@ sub iterate {
 
 sub usage {
 	print qq(
-Usage: $0 <command>
+Usage: $0 <command> [<working directory>]
 
 Avalable commands are:
  init      - initialize a new site
  generate  - generate static content from repository
  serve     - serve site on *.8080
+ daemon    - detach from terminal and run in background (git only)
 
 );
 	exit 1;
@@ -538,47 +553,103 @@ sub serve {
 }
 
 sub daemon {
-	my $pwd = `pwd`;
-	chomp $pwd;
-	chdir $config{repository};
+	chdir $workdir;
+	my $git;
+
+	$System::Command::QUIET = 1;
 
 	eval {
-		my $log = Git::Repository->log( '-1' );
+		$git = Git::Repository->new( work_tree => $config{repository} ) or die "Could not init git: $!\n";
 	};
 	if($@) {
-		print STDERR "$config{repository} is not a git repository!\n";
+		print STDERR "$config{repository} is not a git repository ($@)!\n";
 		exit 1;
 	}
+
+	open LOG, ">> $workdir/qc.log" or die "Could not open daemon logfile $workdir/qc.log: $!\n";
+
+	$SIG{CHLD} = \&REAPER;
+
 	my $pid = fork();
 	if($pid) {
-		$SIG{CHLD} = sub { wait; };
+		$SIG{CHLD} = \&REAPER;
+		print "Forked with PID $pid\n";
 		exit 0;
 	}
 
 	# child here
 	setsid();
-	chdir $pwd;
-	my $pidfile = "qc.pid";
+	setpgrp();
+
+	my $pidfile = "$workdir/qc.pid";
 	if($config{pidfile}) {
 		$pidfile = $config{pidfile};
 	}
-	open P, ">$pidfile" or die "Could not open $pidfile: $!\n"; # FIXME: add syslog instead
-	print P "$pid\n";
+
+
+	open P, ">$pidfile" or die "Could not open $pidfile: $!\n";
+	print P "$$\n";
 	close P;
 
-	my $waitedpid = 0;
-	$SIG{CHLD} = \&REAPER;
-	$SIG{INT}  = sub { exit; };
-	$SIG{TERM} = 'IGNORE';
+	$SIG{INT}  = sub { &log("finishing on request"); exit; };
+	$SIG{HUP}  = sub { &log("got SIGHUP, reloading"); exec(qw($0 daemon $workdir)); exit; };
+
+	select LOG;
+	close STDERR;
+	$| = 1;
+
+	&log("$0 started in daemon mode in $workdir with pid $$");
 
 	while (1) {
-		# FIXME: use git to see if remote repository changed, pull and re-generate
+		eval { $git->run(qw(remote update)); };
+		if($@) {
+			&log("git remote update failed: $@");
+		}
+		else {
+			my $status;
+			eval { $status = $git->run(qw(diff master origin/master)); };
+			if($@) {
+				&log("git diff master origin/master failed: $@");
+			}
+			else {
+				if($status =~ /diff \-\-git/) {
+					&log("observed changes in $config{repository} on master, pulling");
+					eval {$git->run(qw(pull));}; 
+					if(! $@) {
+						&log("git pull done. generating site");
+						&generate;
+					}
+					else {
+						&log("git pull failed with: $@");
+					}
+				}
+			}
+		}
+		sleep 60;
 	}
 }
 
-sub REAPER {
-        $waitedpid = wait;
-        $SIG{CHLD} = \&REAPER;
+sub log {
+	my $msg = shift;
+	chomp $msg;
+	if($command eq 'daemon') {
+		my $time = scalar localtime;
+		print "$time [$$] $msg\n";
+	}
+	else {
+		print "$msg\n";
+	}
 }
+
+no strict 'subs';
+my %Kid_Status;
+sub REAPER {
+  my $child;
+  while (($child = waitpid(-1,WNOHANG)) > 0) {
+    $Kid_Status{$child} = $?;
+  }
+  $SIG{CHLD} = \&REAPER;  # still loathe SysV
+}
+
 
 __DATA__

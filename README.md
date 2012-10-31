@@ -182,6 +182,14 @@ regularly for any changes. If something happens, it will re-generate
 the static site. Just point some webserver, lighty or apache or whatever
 else you have at hands, to the *public_html/* directory and that's it.
 
+The daemon mode maintains a pidfile in the working directory, usually
+named *qc.pid* (can be changed in config file). You can also specify
+the working directory as the second commandline parameter, which maybe
+required if you want to run it from a system startup script. An example
+startup script fro FreeBSD is contained in the source directory. If
+you're using some other non-*BSD unix-mimicking OS, you've got to
+write your own startup script. sorry.
+
 # What kind of weird name is this for a static site generator?
 
 In case if you wonder why I named the tool **Quietly Confidence**: in

@@ -265,6 +265,7 @@ use Shell qw(cp);
 use Template;
 use Data::Dumper;
 use HTTP::Server::Brick;
+use POSIX qw( WNOHANG setsid );
 
 my %types = qw(jpg image png image jpeg image gif image txt markdown md markdown html html htm html pod pod);
 my %config;
@@ -272,9 +273,24 @@ my %menu;
 my @images;
 my $git;
 my $command = shift;
+my $workdir = shift;
 
 if(! $command) {
 	$command = "usage";
+}
+
+if($workdir) {
+	if (! -d $workdir) {
+		print STDERR "workdir $workdir does not exist or is not accessible!\n";
+		exit 1;
+	}
+	else {
+		chdir $workdir;
+	}
+}
+else {
+	$workdir = `pwd`;
+	chomp $workdir;
 }
 
 if(-e "qc.conf") {
@@ -287,7 +303,7 @@ else {
 }
 
 no strict "refs";
-my @allowed = qw(init generate serve);
+my @allowed = qw(daemon init generate serve);
 if(! grep { $command eq $_ } @allowed) {
 	print "Unknown command $command!\n";
 	print "$@\n";
@@ -310,12 +326,10 @@ sub generate {
 			$@ = '';
 		}
 	}
-	my $pwd = `pwd`;
-	chomp $pwd;
 	chdir $config{repository};
 
 	my $root = &iterate('.', 1);
-	chdir $pwd;
+	chdir $workdir;
 
 	&genmenus($root);
 
@@ -327,13 +341,13 @@ sub generate {
 		my $src = $img->realpath;
 		my $dst = $config{mediapath} . $img->filename;
 		if (! -e $dst ) {
-			print "$src => $dst\n";
+			&log( "$src => $dst\n");
 			cp ($src, $dst);
 		}
 		else {
 			my $mtime = (stat($dst))[9];
 			if($img->date > $mtime) {
-				print "$src => $dst\n";
+				&log("$src => $dst\n");
 				cp ($src, $dst);
 			}
 		}
@@ -374,7 +388,7 @@ sub process {
 		elsif($gitfile->isindex) {
 			$title = $gitdir->caption;
 		}
-		print "Processing: " . $gitfile->htmlpath . " => " . $gitfile->dstpath . "\n";
+		&log( "Processing: " . $gitfile->htmlpath . " => " . $gitfile->dstpath);
 		$t->process( 'page.tpl', { config => \%config,
 					   basepath => $gitfile->basepath,
 					   level => $gitdir->level,
@@ -386,7 +400,7 @@ sub process {
 	}
 
 	if(! $gitdir->hasindex) {
-		print "Processing: " . $gitdir->indexpath . "\n";
+		&log( "Processing: " . $gitdir->indexpath );
 		$t->process( 'page.tpl', { config => \%config,
 					   basepath => $gitdir->htmlpath, 
 					   level => $gitdir->level, 
@@ -480,12 +494,13 @@ sub iterate {
 
 sub usage {
 	print qq(
-Usage: $0 <command>
+Usage: $0 <command> [<working directory>]
 
 Avalable commands are:
  init      - initialize a new site
  generate  - generate static content from repository
  serve     - serve site on *.8080
+ daemon    - detach from terminal and run in background (git only)
 
 );
 	exit 1;
@@ -537,17 +552,117 @@ sub serve {
 	$httpd->start;
 }
 
+sub daemon {
+	chdir $workdir;
+	my $git;
+
+	$System::Command::QUIET = 1;
+
+	eval {
+		$git = Git::Repository->new( work_tree => $config{repository} ) or die "Could not init git: $!\n";
+	};
+	if($@) {
+		print STDERR "$config{repository} is not a git repository ($@)!\n";
+		exit 1;
+	}
+
+	open LOG, ">> $workdir/qc.log" or die "Could not open daemon logfile $workdir/qc.log: $!\n";
+
+	$SIG{CHLD} = \&REAPER;
+
+	my $pid = fork();
+	if($pid) {
+		$SIG{CHLD} = \&REAPER;
+		print "Forked with PID $pid\n";
+		exit 0;
+	}
+
+	# child here
+	setsid();
+	setpgrp();
+
+	my $pidfile = "$workdir/qc.pid";
+	if($config{pidfile}) {
+		$pidfile = $config{pidfile};
+	}
+
+
+	open P, ">$pidfile" or die "Could not open $pidfile: $!\n";
+	print P "$$\n";
+	close P;
+
+	$SIG{INT}  = sub { &log("finishing on request"); exit; };
+	$SIG{HUP}  = sub { &log("got SIGHUP, reloading"); exec(qw($0 daemon $workdir)); exit; };
+
+	select LOG;
+	close STDERR;
+	$| = 1;
+
+	&log("$0 started in daemon mode in $workdir with pid $$");
+
+	while (1) {
+		eval { $git->run(qw(remote update)); };
+		if($@) {
+			&log("git remote update failed: $@");
+		}
+		else {
+			my $status;
+			eval { $status = $git->run(qw(diff master origin/master)); };
+			if($@) {
+				&log("git diff master origin/master failed: $@");
+			}
+			else {
+				if($status =~ /diff \-\-git/) {
+					&log("observed changes in $config{repository} on master, pulling");
+					eval {$git->run(qw(pull));}; 
+					if(! $@) {
+						&log("git pull done. generating site");
+						&generate;
+					}
+					else {
+						&log("git pull failed with: $@");
+					}
+				}
+			}
+		}
+		sleep 60;
+	}
+}
+
+sub log {
+	my $msg = shift;
+	chomp $msg;
+	if($command eq 'daemon') {
+		my $time = scalar localtime;
+		print "$time [$$] $msg\n";
+	}
+	else {
+		print "$msg\n";
+	}
+}
+
+no strict 'subs';
+my %Kid_Status;
+sub REAPER {
+  my $child;
+  while (($child = waitpid(-1,WNOHANG)) > 0) {
+    $Kid_Status{$child} = $?;
+  }
+  $SIG{CHLD} = \&REAPER;  # still loathe SysV
+}
+
+
 __DATA__
 begin 644 IGNORE
 M4$L#!`H``````.:V7D$````````````````,`!P`<'5B;&EC7VAT;6PO550)
-M``/`3)!0R%R04'5X"P`!!.D#```$Z0,``%!+`P0*``````#FMEY!````````
-M````````$``<`'!U8FQI8U]H=&UL+V-S<R]55`D``\!,D%#(7)!0=7@+``$$
+M``/`3)!0)OZ04'5X"P`!!.D#```$Z0,``%!+`P0*``````#FMEY!````````
+M````````$``<`'!U8FQI8U]H=&UL+V-S<R]55`D``\!,D%`F_I!0=7@+``$$
 MZ0,```3I`P``4$L#!!0`"``(`.:V7D$``````````#D````9`!P`<'5B;&EC
-M7VAT;6PO8W-S+VQO8V%L+F-S<U54"0`#P$R04&93D%!U>`L``03I`P``!.D#
+M7VAT;6PO8W-S+VQO8V%L+F-S<U54"0`#P$R04,S-D%!U>`L``03I`P``!.D#
 M``#CRLQ-5ZCF4E!(RB]*22VR4C"PYJKEXN+2*T_-R8%()"9GIQ?EE^:E6"DH
 MIX$!2`D`4$L'")^52X4Q````.0```%!+`P04``@`"`#FMEY!``````````#D
 M-P``*``<`'!U8FQI8U]H=&UL+V-S<R]B;V]T<W1R87`M<F5S<&]N<VEV92YC
-M<W-55`D``\!,D%!F4Y!0=7@+``$$Z0,```3I`P``[5O?C]RV$7[W7\&<82!V
+M<W-55`D``\!,D%#,S9!0=7@+``$$Z0,```3I`P``[5O?C]RV$7[W7\&<82!V
 M3SJ2HD1QC1ANTSP$"/K0]BW(@W:ENQ6LE01)=[=VD/^]0_U82>1(N^<-VA3(
 M);"]XL>/P^%P.)^.>_?NFU?D'?E;431U4T4E^6=2ET5>IT\)>>(N=3UHUHCO
 MB_)SE3[L&\(IX^3?SVG3)-4M^3'?Z>:?TEV2UTE,'O,XJ4BS3\A?RV@'?_4M
@@ -611,7 +726,7 @@ MS>NDT;&GQR/5PS;ZEOO^+1G_`#7[]O8L8CD4?O<1K'#Z/4>8%276LKKE8Y9U
 M=<EZ@6"]GII262'C&A7*\.*O#P"=.&&<Y_$+/F;Q!+FQ_[<1PZ?L-"WQNC2W
 M5M]=?@L?_\646O@BQ])$=5XUOELRG7;_%1/DJS7_`5!+!PCS'`&OYPH``.0W
 M``!02P,$%``(``@`YK9>00``````````ZH<!`"$`'`!P=6)L:6-?:'1M;"]C
-M<W,O8F]O='-T<F%P+FUI;BYC<W-55`D``\!,D%!F4Y!0=7@+``$$Z0,```3I
+M<W,O8F]O='-T<F%P+FUI;BYC<W-55`D``\!,D%#,S9!0=7@+``$$Z0,```3I
 M`P``[7W;DN,VDNB[OX+1#H?=;4G#FZX=[M@YGHG=\S!^.?MP(CP^$90(E;AF
 MB3(E=;NMJ'\_N!,))$!2KO)Z8JLUXY*`S$0BD0DD;HFBO52[FDR*<U6224DN
 M156?)_OJ85><+E5S9%^O+9GLF^9"VLF!%"7[\]`VU]/D6'R<G,F.P=W*ZGRJ
@@ -952,9 +1067,9 @@ M5N6'BL=U"#(1A@EJ6IJLXFP9U+0%]3^7@5Y,Y@>RO`(>IFL6-*YM2L#N,A4I
 MR99X)'_7PY3_ZV_I]\BSD/WO2?X]^_LJ_]L=3T$NOO]^D>>C7G%DQUF^S^$=
 MCYXSA.C[M3V'"'TXH\&MRY,8T'_OW8O_#U!+!PA*25>+@#L``.J'`0!02P,$
 M"@``````YK9>00````````````````\`'`!P=6)L:6-?:'1M;"]J<R]55`D`
-M`\!,D%#(7)!0=7@+``$$Z0,```3I`P``4$L#!!0`"``(`.:V7D$`````````
+M`\!,D%`F_I!0=7@+``$$Z0,```3I`P``4$L#!!0`"``(`.:V7D$`````````
 M`*G#```;`!P`<'5B;&EC7VAT;6PO:G,O8F]O='-T<F%P+FIS550)``/`3)!0
-M9E.04'5X"P`!!.D#```$Z0,``.T]:U,;29+?^15EAMANV4+@F=O8/<;8@6WF
+MS,V04'5X"P`!!.D#```$Z0,``.T]:U,;29+?^15EAMANV4+@F=O8/<;8@6WF
 MACL,G&%V;@)K-AJI@1X+M5;=,F9GN=]^F?7,K*K6`X'7MX$C=@=U5V5E9655
 M/BM[XZG87OS?BG@JSLJRKNIQ-EJ'_QM615V4P\YOE?CT;6>S\QVVN*SKT=;&
 M1GU=U'4^[EP4]>7DK-,KKS9LWXW?LD]9U1L7H[IS65\-OG&P*@1Q1]S>E*.;
@@ -1158,7 +1273,7 @@ ME*]@2YF4VL&Q)?ZL>`R8!V\Z3@:VM(=='19!Q:N*DX&N[H$@L->@>/DB$RIW
 M]AMLD<'_X&'2@)H72G->0\^%O52F(0FNR9+AE#1!B`WTAD^PT<FTFV-JS>SF
 M/N0>\)DG0J=\"4/F7E@^X=_1<`L>B]#]'U!+!PA+KI;(B",``*G#``!02P,$
 M%``(``@`YK9>00``````````6PD``!<`'`!P=6)L:6-?:'1M;"]J<R]H=&UL
-M-2YJ<U54"0`#P$R04&93D%!U>`L``03I`P``!.D#``"55FUOVS80_MY?0;-#
+M-2YJ<U54"0`#P$R04,S-D%!U>`L``03I`P``!.D#``"55FUOVS80_MY?0;-#
 M(L6<[+1K/\A14S1;U@%M,2`=]B%+!XJB)"84J5&45]?4?]]1+[;CM0,&&)+(
 M.][+P[OGO#B;H;<?W[][@6Y*L4;KVO#GT4ODT&N:4_-`&_3Z/J/2:@4?6OVI
 M.)7HM>$5J+S_Y>/BYU_?/4/O!..JX=D3A'Y33%=@I($E:G1K&(]1:6W=Q(M%
@@ -1187,7 +1302,7 @@ M**.6]@\I&HM&JD)[JD(#5:&!JM!`56B@*N0;'E7<"X"UD&XM7!NJC2[\WPTT
 MLAAJV@HT-\B*BJ.>JC`9F1,"'K]F23([)P?,/XK&U2#VR,080*"MM(.1"<OX
 MH5N-=)%(\@"U!@#94C1DXI?PR3]02P<(KIDK`;,$``!;"0``4$L#!!0`"``(
 M`.:V7D$``````````!#(`P`8`!P`<'5B;&EC7VAT;6PO:G,O:G%U97)Y+FIS
-M550)``/`3)!09E.04'5X"P`!!.D#```$Z0,``*Q;>W/;1I+_F_H48]H5`Q8)
+M550)``/`3)!0S,V04'5X"P`!!.D#```$Z0,``*Q;>W/;1I+_F_H48]H5`Q8)
 M6DXVB27+.C_DB_;\R%G>\UY)S!9$#DG8(,``H&C%\G>_7W?/"R2EY*ZNXM@$
 M9J:GNZ??/1@\N*,^_>=25U?J<B_Y*=E3GWZGIV14SM6U?2BKZ2#/1KJHM7HP
 MV(DFRV+49&41J556C,M53RV+L9YDA1ZK6'W=V1D,U#\PMYEI-2JK2H\:-2Y'
@@ -2792,33 +2907,33 @@ M4*7F'-9E6&S]KM4=BI\]I(%R1HL!5TOU4)4]H,&_\UE*SV%X2PX*(MK:@5[M
 M<;6<+0AM-#P]Y^C!T+;01Z34`>*_B.XH)?1PQR-[\M*)U4'$&3[AC);27TI9
 M8(%"X46/9Q<PG%'@+TCV+A+N=EC<%)I>[V8OIB,,._J_4$L'",F>P^3,&0$`
 M$,@#`%!+`P04``@`"`#FMEY!```````````^`0``%P`<`'!U8FQI8U]H=&UL
-M+V9A=FEC;VXN:6-O550)``/`3)!09E.04'5X"P`!!.D#```$Z0,``&-@8`1"
+M+V9A=FEC;VXN:6-O550)``/`3)!0S,V04'5X"P`!!.D#```$Z0,``&-@8`1"
 M`0$&,-!@9&`0`]%`#!)2`&)&!A:PW`$&3/#__W^&:A`#2%1#&=50SMZ]>X%4
 M-<-_L$*06@CC/X(#TD]?\`%=P#CGS_[W$L^NO_[P[38#PZ^7#$P_#B?F_&$N
 M2?W!Y)S_@:E(X0%CS(4'S((,S_CW/U.79V!B_\_`UO[?J.'Q?\,'`%!+!PC-
 M8?WTAP```#X!``!02P,$"@``````YK9>00````````````````<`'`!S;W5R
-M8V4O550)``/`3)!0R%R04'5X"P`!!.D#```$Z0,``%!+`P0*``````#FMEY!
-M````````````````$P`<`'-O=7)C92\P,2U0<F]J96-T<R]55`D``\!,D%#(
-M7)!0=7@+``$$Z0,```3I`P``4$L#!!0`"``(`.:V7D$``````````#H````;
-M`!P`<V]U<F-E+S`Q+5!R;VIE8W1S+VEN9&5X+FUD550)``/`3)!09E.04'5X
+M8V4O550)``/`3)!0)OZ04'5X"P`!!.D#```$Z0,``%!+`P0*``````#FMEY!
+M````````````````$P`<`'-O=7)C92\P,2U0<F]J96-T<R]55`D``\!,D%`F
+M_I!0=7@+``$$Z0,```3I`P``4$L#!!0`"``(`.:V7D$``````````#H````;
+M`!P`<V]U<F-E+S`Q+5!R;VIE8W1S+VEN9&5X+FUD550)``/`3)!0S,V04'5X
 M"P`!!.D#```$Z0,``%-6\*U4*"C*STI-+E$H2$Q/Y>+R2"U*54@$XN+\W%28
 M7+&"IWJN0GE^479F7KI"?IX>%P!02P<(!'X$1C0````Z````4$L#!!0`"``(
 M`.:V7D$``````````"L````?`!P`<V]U<F-E+S`Q+5!R;VIE8W1S+U-O;65T
-M:&EN9RYM9%54"0`#P$R04&93D%!U>`L``03I`P``!.D#``!35@C.STTMR<C,
+M:&EN9RYM9%54"0`#P$R04,S-D%!U>`L``03I`P``!.D#``!35@C.STTMR<C,
 M2U<H*,K/2DTNX>(*SR_*!@GDYRD4PV3UN`!02P<(ZG:J1"0````K````4$L#
 M!!0`"``(`.:V7D$``````````%D````/`!P`<V]U<F-E+VEN9&5X+FUD550)
-M``/`3)!09E.04'5X"P`!!.D#```$Z0,``!7*00J`(!`%T+VG^-"BG9<I:#W9
+M``/`3)!0S,V04'5X"P`!!.D#```$Z0,``!7*00J`(!`%T+VG^-"BG9<I:#W9
 M3X74T!'I]N'V\18<?%Q)A!:D#YD#/NK@B::BT>$53V/VP,JU(1=%ZB[,WDA,
 M1BNXI5IL*A^T9U[6_%!+!P@`#MTA3@```%D```!02P,$%``(``@`YK9>00``
-M````````*0````\`'`!S;W5R8V4O86)O=70N;6155`D``\!,D%!F4Y!0=7@+
+M````````*0````\`'`!S;W5R8V4O86)O=70N;6155`D``\!,D%#,S9!0=7@+
 M``$$Z0,```3I`P``4U9P3,HO+5$HR<@L5BC.+$GEXG)/S4LM2BQ)35$HSRS)
 M4'#W#`EW=>("`%!+!PBA1$C@*P```"D```!02P,$"@``````YK9>00``````
-M``````````H`'`!T96UP;&%T97,O550)``/`3)!0R%R04'5X"P`!!.D#```$
+M``````````H`'`!T96UP;&%T97,O550)``/`3)!0)OZ04'5X"P`!!.D#```$
 MZ0,``%!+`P04``@`"`#FMEY!``````````!!````$@`<`'1E;7!L871E<R]P
-M86=E+G1P;%54"0`#P$R04&93D%!U>`L``03I`P``!.D#``"+5E7P]'/V"75Q
+M86=E+G1P;%54"0`#P$R04,S-D%!U>`L``03I`P``!.D#``"+5E7P]'/V"75Q
 M5<C,2TFMT"LIR%%0C>6*5E5P\O%W]E;(3<S,@PHDY^>5I.:50'FN?BX@%@!0
 M2P<(M904V38```!!````4$L#!!0`"``(`.:V7D$``````````/<)```3`!P`
-M=&5M<&QA=&5S+VEN9&5X+G1P;%54"0`#P$R04&93D%!U>`L``03I`P``!.D#
+M=&5M<&QA=&5S+VEN9&5X+G1P;%54"0`#P$R04,S-D%!U>`L``03I`P``!.D#
 M``"M5EMOFTH0?FY^Q933YJE`72E':0)(E>,JKM*DE[Q441X6&,*F"TMW%UQ+
 M_?%G%K"-;5PETGF!96?FF\M^,TOP\N)F>OOCRPQR4XCH*+`O$*Q\")T4G>@(
 M('CINJ!EK1(\(RU3G?E^+*71"V:2W$MDX6O!#/K@NJU^CBRU"P@*-*PU<?%7
