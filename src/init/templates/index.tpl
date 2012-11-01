@@ -10,19 +10,17 @@
     <meta name="keywords" content="[% keywords %]">
     <meta name="description" content="[% description %]">
 
-    <link href="/css/bootstrap.min.css" rel="stylesheet">
-    <link href="/css/bootstrap-responsive.css" rel="stylesheet">
-    <link href="/css/local.css" rel="stylesheet">
+    <link href="[% config.baseuri %]/css/bootstrap.min.css" rel="stylesheet">
+    <link href="[% config.baseuri %]/css/bootstrap-responsive.css" rel="stylesheet">
+    <link href="[% config.baseuri %]/css/local.css" rel="stylesheet">
 
     <!-- Le HTML5 shim, for IE6-8 support of HTML5 elements -->
     <!-- Javascript files are disabled in the default template. enable them by removing the comment, if you need it -->
     <!--[if lt IE 9]>
-      -<script src="/js/html5.js"></script>
+      <script src="[% config.baseuri %]/js/html5.js"></script>
     <![endif]-->
-    <!--
-    <script src="/js/jquery.js"></script>
-    <script src="/js/bootstrap.js"></script>
-    -->
+    <script src="[% config.baseuri %]/js/jquery.js"></script>
+    <script src="[% config.baseuri %]/js/bootstrap.js"></script>
    [% PROCESS header %]
   </head>
 
@@ -45,7 +43,7 @@
     <div class="row-fluid">
       <div class="span2">
         <ul class="nav nav-list">
-            <li><a href="/">Home</a></li>
+            <li><a href="[% config.baseuri %]">Home</a></li>
             [% FOREACH item IN menu.root %]
                  <li><a href="[% config.baseuri %][% item.href %]">[% item.cap %]</a>
                  [% IF level > 1 && item.href == basepath %]
