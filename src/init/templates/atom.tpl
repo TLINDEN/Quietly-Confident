@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="ISO-8859-1"?>
+[% USE date %]<?xml version="1.0" encoding="ISO-8859-1"?>
 <feed
    xmlns="http://www.w3.org/2005/Atom"
    xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
@@ -11,7 +11,7 @@
    <title>[% config.sitetitle %] atom feed</title>
    <subtitle type="html"></subtitle>
    <id>[% config.baseuri %]/blog/</id>
-   <updated>[% date.format(updated) %]</updated>
+   <updated>[% date.format(updated, , "%a, %e %b %Y %T %Z") %]</updated>
    <dc:language>de</dc:language>
    <admin:errorReportsTo rdf:resource="mailto:" />
 
@@ -22,8 +22,8 @@
             <name>[% post.by %]</name>
             <email>hidden</email>
         </author>
-        <published>[% date.format(post.date) %]</published>
-        <updated>[% date.format(post.date) %]</updated>
+        <published>[% date.format(post.date, "%a, %e %b %Y %T %Z") %]</published>
+        <updated>[% date.format(post.date, "%a, %e %b %Y %T %Z") %]</updated>
         <id>[% config.baseuri %][% post.blogpath %]</id>
         <title type="html">[% post.caption %]</title>
         <content type="html"><![CDATA[
