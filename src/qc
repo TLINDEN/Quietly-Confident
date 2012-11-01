@@ -641,7 +641,7 @@ sub init {
 repository = source
 public     = public_html
 templates  = templates
-sitetitle  = Gitweb Static Site
+sitetitle  = Quietly Confitent Static Site
 baseuri    = /
 media      = /images/
 mediapath  = public_html/images/
