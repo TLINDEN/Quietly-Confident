@@ -6,7 +6,7 @@
 		<div>
 			[% post.content %]
 			<div style="border-top: 1px solid #c4c4c4">
-				gepostet am [% date.format(post.date, '%d.%m.%y %H:%M:%S') %]
+				posted [% date.format(post.date, '%d.%m.%y %H:%M:%S') %]
 			</div>
 		</div>
 	</div>
