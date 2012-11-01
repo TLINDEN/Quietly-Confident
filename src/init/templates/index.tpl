@@ -37,7 +37,7 @@
    <div class="well">
     <div class="row-fluid">
       <div class="span12" style="padding-bottom: 10px">
-        <a href="/"><h1>[% config.sitetitle %]</a>
+        <a href="[% config.baseuri %]"><h1>[% config.sitetitle %]</a>
       </div>
     </div>
     <div class="row-fluid">
