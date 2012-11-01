@@ -5,7 +5,7 @@
 # by TLINDEN <tlinden@cpan.org>
 # http://www.daemon.de/QuietlyConfident
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 sub path2public {
 	# convert a given physical source path
@@ -323,7 +323,7 @@ else {
 }
 
 no strict "refs";
-my @allowed = qw(daemon init generate serve);
+my @allowed = qw(watch daemon init generate serve);
 if(! grep { $command eq $_ } @allowed) {
 	print "Unknown command $command!\n";
 	print "$@\n";
@@ -626,6 +626,7 @@ Avalable commands are:
  generate  - generate static content from repository
  serve     - serve site on *.8080
  daemon    - detach from terminal and run in background (git only)
+ watch     - watch for updates, same as daemon but in forreground (git only)
 
 );
 	exit 1;
@@ -724,6 +725,21 @@ sub daemon {
 	$| = 1;
 
 	&log("$0 started in daemon mode in $workdir with pid $$");
+
+	&watch($git);
+}
+
+sub watch {
+	my ($git) = shift;
+	if(! $git) {
+		eval {
+			$git = Git::Repository->new( work_tree => $config{repository} ) or die "Could not init git: $!\n";
+		};
+		if($@) {
+			print STDERR "$config{repository} is not a git repository ($@)!\n";
+			exit 1;
+		}
+	}
 
 	while (1) {
 		eval { $git->run(qw(remote update)); };
