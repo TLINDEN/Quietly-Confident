@@ -625,8 +625,8 @@ Avalable commands are:
  init      - initialize a new site
  generate  - generate static content from repository
  serve     - serve site on *.8080
- daemon    - detach from terminal and run in background (git only)
- watch     - watch for updates, same as daemon but in forreground (git only)
+ daemon    - detach from terminal and run in background
+ watch     - watch for updates, same as daemon but in forreground
 
 );
 	exit 1;
@@ -730,17 +730,51 @@ sub daemon {
 }
 
 sub watch {
-	my ($git) = shift;
+	my ($git) = @_;
+	my $gitmode = 1;
 	if(! $git) {
 		eval {
 			$git = Git::Repository->new( work_tree => $config{repository} ) or die "Could not init git: $!\n";
 		};
 		if($@) {
-			print STDERR "$config{repository} is not a git repository ($@)!\n";
-			exit 1;
+			print STDERR "$config{repository} is not a git repository!\n";
+			print STDERR "Watching in filesystem mode.\n";
+			$gitmode = 0;
 		}
 	}
+	if($gitmode) {
+		&gitwatch($git);
+	}
+	else {
+		&fswatch();
+	}
+}
 
+sub setlast {
+	open LAST, ">${workdir}/.last" or die "Could not write to ${workdir}/.last: $!\n";
+	print LAST "0\n";
+	close LAST;
+}
+
+sub fswatch {
+	if(! -e "${workdir}/.last") {
+		&setlast;
+	}
+	while (1) {
+		open FIND, "find $config{repository} -newer $workdir/.last|" or die "Could not execute find: $!\n";
+		my $found = <FIND>;
+		close FIND or die "Could not execute find!\n";
+		if($found) {
+			&log("observed changes in $config{repository}, generating site");
+			&generate;
+			&setlast;
+		}
+		sleep 60;
+	}
+}
+
+sub gitwatch {
+	my ($git) = @_;
 	while (1) {
 		eval { $git->run(qw(remote update)); };
 		if($@) {
