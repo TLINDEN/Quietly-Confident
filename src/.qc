@@ -5,7 +5,7 @@
 # by TLINDEN <tlinden@cpan.org>
 # http://www.daemon.de/QuietlyConfident
 
-our $VERSION = '0.05';
+our $VERSION = '0.04';
 
 sub path2public {
 	# convert a given physical source path
@@ -31,9 +31,8 @@ package Gitdir;
 use Moo;
 use Sub::Quote;
 use Data::Dumper;
-use IO::All -utf8;
 
-has ioall => (
+has path => (
         is => 'rw'
 );
 
@@ -63,7 +62,7 @@ has dirs => (
 
 sub caption {
 	my $self = shift;
-	my $cap = $self->ioall->name;
+	my $cap = $self->path;
 	$cap =~ s/.*\///;           # remove leading path parts
 	$cap =~ s/^\d*[\.\-_ ]*//;  # remove leading number
 	$cap =~ s/[\.\-_ ]*/ /;     # punctuation to space
@@ -74,12 +73,12 @@ sub caption {
 
 sub dstpath {
 	my $self = shift;
-	return main::path2public($self->ioall->name);
+	return main::path2public($self->path);
 }
 
 sub htmlpath {
 	my $self = shift;
-	return main::path2public($self->ioall->name) . '/';
+	return main::path2public($self->path) . '/';
 }
 
 sub indexpath {
@@ -94,7 +93,7 @@ sub menu {
 
 	push @objects, grep { ! $_->isindex } @{$self->files};
 	
-	my @menu = map { { href => $_->htmlpath, cap => $_->caption } } sort { $a->ioall->name cmp $b->ioall->name } @objects;
+	my @menu = map { { href => $_->htmlpath, cap => $_->caption } } sort { $a->path cmp $b->path } @objects;
 	return @menu;
 }
 
@@ -106,9 +105,8 @@ use Moo;
 use Sub::Quote;
 use Text::Markdown 'markdown';
 use Pod::Html;
-use IO::All -utf8;
 
-has ioall => (
+has path => (
         is => 'rw'
 );
 
@@ -142,12 +140,12 @@ has config => (
 
 sub realpath {
 	my $self = shift;
-	return io->catfile($self->config->{repository}, $self->ioall->name);
+	return $self->config->{repository} . '/' . $self->path;
 }
 
 sub filename {
 	my $self = shift;
-	my $path = $self->ioall->name;
+	my $path = $self->path;
 	$path =~ s/.*\///;
 	return $path;
 }
@@ -176,7 +174,10 @@ sub content {
 		$raw = $self->raw;
 	}
 	else {
-        	$raw = io($self->realpath)->slurp;
+		my $path = $self->realpath;
+        	open RAW, "<$path" or return die "Could not open $path: $!";
+        	$raw = join '', <RAW>;
+        	close RAW;
 		$self->raw($raw);
 	}
         if($self->type eq 'markdown') {
@@ -186,10 +187,9 @@ sub content {
 		$html = $self->cleanhtml($raw);
 	}
 	elsif($self->type eq 'pod') {
-		my $raw = io("pod2html " . $self->realpath . "|")->slurp;
-		#open POD, "pod2html " . $self->realpath . "|";
-		#my $raw = join '', <POD>;
-		#close POD;
+		open POD, "pod2html " . $self->realpath . "|";
+		my $raw = join '', <POD>;
+		close POD;
 		$html = $self->cleanhtml($raw);
 	}
         else {
@@ -221,7 +221,7 @@ sub keywords {
 
 sub caption {
 	my $self = shift;
-	my $cap = $self->ioall->name;
+	my $cap = $self->path;
 	$cap =~ s/.*\///;           # remove leading path parts
 	$cap =~ s/\.[^\.]*$//;      # remove suffix
 	$cap =~ s/^\d*[\.\-_ ]*//;  # remove leading number
@@ -234,21 +234,21 @@ sub caption {
 sub dstpath {
 	# physical destination file
         my $self = shift;
-	my $out  = main::path2public($self->ioall->name, 1);
+	my $out  = main::path2public($self->path, 1);
 	return $out . "index.html";
 }
 
 sub htmlpath {
 	# used for links
 	my $self = shift;
-	my $out  = main::path2public($self->ioall->name, 1);
+	my $out  = main::path2public($self->path, 1);
 	return $out;
 }
 
 sub blogpath {
 	# used for blog entries
 	my $self = shift;
-	my $out  = main::path2public($self->ioall->name, 1);
+	my $out  = main::path2public($self->path, 1);
 	$out =~ s/^blog[^\/]*//;
 	$out =~ s/\///g;
 	my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime($self->date);
@@ -268,7 +268,7 @@ sub dstblogpath {
 sub basepath {
 	# dir one level above
 	my $self = shift;
-	my $out  = main::path2public($self->ioall->name, 1);
+	my $out  = main::path2public($self->path, 1);
 	$out     =~ s/\/[^\/]*\/$/\//;
 	return $out;
 }
@@ -286,7 +286,6 @@ use Template;
 use Data::Dumper;
 use HTTP::Server::Brick;
 use POSIX qw( WNOHANG setsid );
-use IO::All -utf8;
 
 my %types = qw(jpg image png image jpeg image gif image txt markdown md markdown html html htm html pod pod);
 my %config;
@@ -349,7 +348,7 @@ sub generate {
 	}
 	chdir $config{repository};
 
-	my $root = &iterate(io('.'), 1);
+	my $root = &iterate('.', 1);
 	chdir $workdir;
 
 	&genmenus($root);
@@ -504,7 +503,7 @@ sub process {
 			{ OUTPUT_PATH  => $config{public},
 			  INCLUDE_PATH => $config{templates},
 			  INTERPOLATE  => 1 }) || die "$Template::ERROR\n";
- 
+  
   foreach my $gitfile (@{$gitdir->files}) {
     my $title = $gitfile->caption;
     if($gitdir->level == 1  && $gitfile->isindex) {
@@ -559,39 +558,42 @@ sub type {
 
 sub iterate {
 	my($dir, $level) = @_;
-	printf "Iterating in %s\n", $dir->name;
-	my $gitdir = Gitdir->new( files => [], dirs => [], hasindex => 0, hasdirs => 0, hasfiles => 0, level => $level);
-	$gitdir->ioall( $dir );
-	foreach my $file ($dir->all) {
-		my $path = "$file";
-		$path =~ s/^\.\///;
-		$file = io($path);
-		#my $ignore = $file->absolute->pathname; # magic, so that IO::All remembers where the files is located
-		if( $file->is_dir ) {
-			push @{$gitdir->{dirs}}, &iterate($file, $level + 1);
+	my $gitdir = Gitdir->new( files => [], dirs => [], hasindex => 0, hasdirs => 0, hasfiles => 0, level => $level );
+	my $dirpath = $dir;
+	$dirpath =~ s/^\.\///;
+	$gitdir->path($dirpath);
+	opendir D, $dir;
+	foreach my $file (readdir D) {
+		next if ($file =~ /^\./);
+		if(-d "$dir/$file" ) {
+			push @{$gitdir->{dirs}}, &iterate("$dir/$file", $level + 1);
 			$gitdir->hasdirs(1);
 		}
 		else {
+			my $path = "$dir/$file";
+			$path =~ s/^\.\///;
 			my $log;
-			eval { ($log) = Git::Repository->log( '-1', $file ) };
+			eval { ($log) = Git::Repository->log( '-1', "$dir/$file" ) };
 			$@ = '';
 			my $gitfile;
 			if($log) {
-				$gitfile = Gitfile->new( ioall  => $file,
-							 config => \%config,
-					                 type   => &type($file),
-					                 date   => $log->committer_localtime,
-					                 by     => $log->committer_name );
+				$gitfile = Gitfile->new( path => $path,
+							    config => \%config,
+					                    type   => &type($file),
+					                    date   => $log->committer_localtime,
+					                    by     => $log->committer_name );
 			}
 			else {
 				# not part of git, but use it if local option is set
 				if($config{local}) {
-					$gitfile = Gitfile->new( ioall  => $file,
+					my $mtime = (stat($path))[9];	
+					my $owner = getpwuid((stat($path))[4]);
+
+					$gitfile = Gitfile->new( path   => $path,
 								 config => \%config,
 								 type   => &type($file),
-								 date   => $file->mtime,
-								 by     => (getpwuid($file->uid))[0] );
-					#print "ioall file: " . $file->absolute->pathname ."\n";
+								 date   => $mtime,
+								 by     => $owner );
 				}
 			}
 			if($gitfile) {
@@ -609,6 +611,7 @@ sub iterate {
 			}
 		}
 	}
+	close D;
 
 	return $gitdir;
 }
