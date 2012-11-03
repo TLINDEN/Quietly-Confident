@@ -681,14 +681,6 @@ sub daemon {
 
 	$System::Command::QUIET = 1;
 
-	eval {
-		$git = Git::Repository->new( work_tree => $config{repository} ) or die "Could not init git: $!\n";
-	};
-	if($@) {
-		print STDERR "$config{repository} is not a git repository ($@)!\n";
-		exit 1;
-	}
-
 	open LOG, ">> $workdir/qc.log" or die "Could not open daemon logfile $workdir/qc.log: $!\n";
 
 	$SIG{CHLD} = \&REAPER;
@@ -723,7 +715,7 @@ sub daemon {
 
 	&log("$0 started in daemon mode in $workdir with pid $$");
 
-	&watch($git);
+	&watch();
 }
 
 sub watch {
@@ -733,16 +725,18 @@ sub watch {
 		eval {
 			$git = Git::Repository->new( work_tree => $config{repository} ) or die "Could not init git: $!\n";
 		};
-		if($@) {
+		if($@ || ! -d "$config{repository}/.git") {
 			print STDERR "$config{repository} is not a git repository!\n";
 			print STDERR "Watching in filesystem mode.\n";
 			$gitmode = 0;
 		}
 	}
 	if($gitmode) {
+		&log("gitwatch");
 		&gitwatch($git);
 	}
 	else {
+		&log("fswatch");
 		&fswatch();
 	}
 }
@@ -760,7 +754,7 @@ sub fswatch {
 	while (1) {
 		open FIND, "find $config{repository} -newer $workdir/.last|" or die "Could not execute find: $!\n";
 		my $found = <FIND>;
-		close FIND or die "Could not execute find!\n";
+		close FIND;
 		if($found) {
 			&log("observed changes in $config{repository}, generating site");
 			&generate;

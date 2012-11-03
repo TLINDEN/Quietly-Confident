@@ -25,7 +25,7 @@ rcvar=`set_rcvar`
 load_rc_config $name
 pidfile="${qc_workingdir}/${name}.pid"
 command=/usr/local/bin/qc
-command_interpreter="perl"
+command_interpreter="/usr/bin/perl"
 command_args="daemon ${qc_workingdir}"
 
 start_cmd="echo \"Starting ${name}.\"; su ${qc_user} -c \"${command} ${command_args}\""
