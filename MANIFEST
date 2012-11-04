@@ -4,3 +4,4 @@ qc
 qc.pod
 README.md
 README
+rc.d/qc.sh
