@@ -1,4 +1,19 @@
-=head1 Introduction
+=head1 NAME 
+
+Quietly Confident - a static git-aware site generator written in perl.
+
+=head1 SYNOPSYS
+
+ Usage: qc <command> [<working directory>]
+
+ Avalable commands are:
+  init      - initialize a new site
+  generate  - generate static content from repository
+  serve     - serve site on *.8080
+  daemon    - detach from terminal and run in background
+  watch     - watch for updates, same as daemon but in forreground
+
+=head1 DESCRIPTION
 
 Quietly Confident is a static site generator written in perl.
 
@@ -6,18 +21,28 @@ It is git-aware, which means it is able to use a repository as
 the source of pages to generate. Quietly Confident understands
 textfiles as sources in the following formats:
 
- [Markdown](http://daringfireball.net/projects/markdown/). It considers
-  files with the suffix .md or .txt to be markdown files.
+=over
 
- [Perl Pod](http://perldoc.perl.org/perlpod.html). POD is a relatively
-  simple format and widely known among perl developers.
+=item B<Markdown>
 
- HTML. You may just put HTML files as source. Quietly Confident
-  will remove anything not needed as: anything between `<head>..</head>`,
-  `<html>` and `<body>` tags. It will also remove any `<font>` or `<span>` tags
-  and any occurence of style or class attributes. This conversion
-  enables you to use the HTML output produced by MS Word. Just in case,
-  not that I encourage you to do so :)
+(http://daringfireball.net/projects/markdown/). It considers
+files with the suffix .md or .txt to be markdown files.
+
+=item L<B<perlpod>> 
+
+POD is a relatively
+simple format and widely known among perl developers.
+
+=item B<HTML>
+
+You may just put HTML files as source. Quietly Confident
+will remove anything not needed as: anything between C<<head>..</head>>,
+C<<html>> and C<<body>> tags. It will also remove any C<<font>> or C<<span>> tags
+and any occurence of style or class attributes. This conversion
+enables you to use the HTML output produced by MS Word. Just in case,
+not that I encourage you to do so :)
+
+=back
 
 Quietly Confident does not support any meta data in a source file,
 as can be seen with many other static site generators (in most cases
@@ -36,9 +61,9 @@ Download the source:
 
 or:
 
-	$ wget http://search.cpan.org/CPAN/authors/id/T/TL/TLINDEN/Quietly-Confident-0.05.tar.gz
-	$ tar xfz Quietly-Confident-0.05.tar.gz
-	$ cd Quietly-Confident-0.05
+	$ wget http://search.cpan.org/CPAN/authors/id/T/TL/TLINDEN/Quietly-Confident-0.06.tar.gz
+	$ tar xfz Quietly-Confident-0.06.tar.gz
+	$ cd Quietly-Confident-0.06
 
 Install it:
 
@@ -56,6 +81,7 @@ be installed using CPAN:
 	cpan[1]> install Template
 	cpan[1]> install HTTP::Server::Brick
 	cpan[1]> install Config::General
+	cpan[1]> install IO::All
 
 You're done with install.
 
@@ -135,20 +161,29 @@ Just point your browser to the displayed uri and there you go.
 There are a few rules which you may follow to keep your site
 organized:
 
- generated url's will always end with / and be normalized. Say
-  you've got a file 01-Undone Projects/Mikey Mouse.md. The url
-  generated for this file will be: /undone-projects/mikey-mouse/.
+=over
 
- to order menu entries as you wish, prepend your filenames and
-  directories with numbers like 01-Projects, 02-About.md. 
-  Those numbers will be removed and only used internaly for ordering.
+=item
 
- if you want to put an image into a page, just put the image
-  somewhere inside the source directory. It doesn't matter, where.
-  Refer to the image in your page without any directory.
-  Quietly Confidence will move the image to the public_html/images/
-  directory and modify the img html tag accordingly.
+generated url's will always end with / and be normalized. Say
+you've got a file 01-Undone Projects/Mikey Mouse.md. The url
+generated for this file will be: /undone-projects/mikey-mouse/.
 
+=item
+
+to order menu entries as you wish, prepend your filenames and
+directories with numbers like 01-Projects, 02-About.md. 
+Those numbers will be removed and only used internaly for ordering.
+
+=item
+
+if you want to put an image into a page, just put the image
+somewhere inside the source directory. It doesn't matter, where.
+Refer to the image in your page without any directory.
+Quietly Confidence will move the image to the public_html/images/
+directory and modify the img html tag accordingly.
+
+=back
 
 =head1 Using a git repository as the source
 
@@ -190,6 +225,11 @@ startup script fro FreeBSD is contained in the source directory. If
 you're using some other non-BSD unix-mimicking OS, you've got to
 write your own startup script. sorry.
 
+You might also run the the daemon mode in the foreground without
+detaching for troubleshooting purposes. For this execute:
+
+        $ qc watch
+
 =head1 What kind of weird name is this for a static site generator?
 
 In case if you wonder why I named the tool Quietly Confidence: in
@@ -214,7 +254,7 @@ wikipedia page: [GSV Sleeper Service](http://en.wikipedia.org/wiki/GSV_Sleeper_S
 
 =head1 Bugs and issues
 
-One might assume that the version number 0.05 suggests that
+One might assume that the version number 0.06 suggests that
 the tool is in a quite early stage. Well, that's right. Just file
 an issue at Github if you find a bug or think it doesn't behave
 as predicted. Patches are most welcome though.
@@ -226,3 +266,13 @@ hell did you create another one? In fact I tried some of them, something about
 20 different tools. None satisfied my needs: maximum simple input format.
 Some are using ruby, which I don't use by principle. Some are too old
 and old-fashioned. Some just didn't work.
+
+=head1 AUTHOR
+
+T. Linden <tom at linden dot at>
+
+=head1 LICENSE
+
+Perl Artistic License
+
+=cut

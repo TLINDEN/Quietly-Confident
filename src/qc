@@ -5,7 +5,7 @@
 # by TLINDEN <tlinden@cpan.org>
 # http://www.daemon.de/QuietlyConfident
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 sub path2public {
 	# convert a given physical source path
@@ -710,7 +710,8 @@ sub daemon {
 	$SIG{HUP}  = sub { &log("got SIGHUP, reloading"); exec(qw($0 daemon $workdir)); exit; };
 
 	select LOG;
-	close STDERR;
+	open ERRLOG, ">$workdir/qc.stderr";
+	*STDERR = *ERRLOG;
 	$| = 1;
 
 	&log("$0 started in daemon mode in $workdir with pid $$");
