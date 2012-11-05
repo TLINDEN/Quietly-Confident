@@ -13,7 +13,8 @@
 # and the key has to be password-less.
 #
 # to run as a service:
-# cygrunsrv -I websync -d "Sync Static Web Source" -p /bin/bash.exe -a /home/$USER/bin/websync
+# cygrunsrv -I websync -d "Sync Static Web Source" -p /bin/bash.exe -a /home/$USER/bin/websync-service
+# cygrunsrv -S websync
 #
 # you might consider changing some of the variables
 # on top of this file according to your environment.
@@ -27,12 +28,13 @@
 base="/cygdrive/c/temp"
 source="$base/WWW"
 dest="USER@REMOTESERVER:tmp" # contains WWW afterwards!
+idrsa="/home/$CygwinUser/.ssh/id_rsa"
 log="$base/rsynclog.txt"
 opts="-r -v --force --del -h --progress --log-file=$log -u -q"
 lslr="$base/lslr.txt"
 
 sync() {
-    /bin/rsync $opts -e "ssh -o ConnectTimeout=3" "$source" "$dest"
+    /bin/rsync $opts -e "ssh -o ConnectTimeout=3 -o UserKnownHostsFile=/tmp/knownhosts -o StrictHostKeyChecking=no -o IdentityFile=$idrsa" "$source" "$dest"
 }
 
 lslr() {
