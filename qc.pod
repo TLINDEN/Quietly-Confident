@@ -1,6 +1,6 @@
 =head1 NAME 
 
-Quietly Confident - a static git-aware site generator written in perl.
+Quietly::Confident - a static git-aware site generator written in perl.
 
 =head1 SYNOPSYS
 
