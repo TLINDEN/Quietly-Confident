@@ -772,11 +772,12 @@ sub daemon {
 sub watch {
 	my ($git) = @_;
 	my $gitmode = 1;
+	print STDERR Dumper($git);
 	if(! $git) {
 		eval {
 			$git = Git::Repository->new( work_tree => $config{repository} );
 		};
-		if($@) {
+		if($@ || ! -d "$config{repository}/.git") {
 			print STDERR "$config{repository} is not a git repository!\n";
 			print STDERR "Watching in filesystem mode.\n";
 			$gitmode = 0;
