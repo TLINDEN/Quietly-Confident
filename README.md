@@ -36,9 +36,9 @@ Download the source:
 
 or:
 
-	$ wget http://search.cpan.org/CPAN/authors/id/T/TL/TLINDEN/Quietly-Confident-0.06.tar.gz
-	$ tar xfz Quietly-Confident-0.06.tar.gz
-	$ cd Quietly-Confident-0.06
+	$ wget http://search.cpan.org/CPAN/authors/id/T/TL/TLINDEN/Quietly-Confident-0.07.tar.gz
+	$ tar xfz Quietly-Confident-0.07.tar.gz
+	$ cd Quietly-Confident-0.07
 
 Install it:
 
@@ -221,7 +221,7 @@ wikipedia page: [GSV Sleeper Service](http://en.wikipedia.org/wiki/GSV_Sleeper_S
 
 # Bugs and issues
 
-One might assume that the version number **0.06** suggests that
+One might assume that the version number **0.07** suggests that
 the tool is in a quite early stage. Well, that's right. Just file
 an issue at Github if you find a bug or think it doesn't behave
 as predicted. Patches are most welcome though.

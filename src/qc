@@ -5,7 +5,7 @@
 # by TLINDEN <tlinden@cpan.org>
 # http://www.daemon.de/QuietlyConfident
 
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
 sub path2public {
 	# convert a given physical source path
@@ -107,6 +107,7 @@ use Sub::Quote;
 use Text::Markdown 'markdown';
 use Pod::Html;
 use IO::All -utf8;
+use URI::Encode;
 
 has ioall => (
         is => 'rw'
@@ -196,7 +197,38 @@ sub content {
                 $html = $raw;
         }
 
-	$html =~ s/(src=")(?<!http)([^"]*)(")/$1 . $self->config->{media} . $2 . $3/ges;
+	# FIXME: link to thumb
+	my $uri = URI::Encode->new( { encode_reserved => 0 } );
+	my %img;
+	while ($html =~ /(<img[^>]*>)/gsi) {
+		my $imgcode = $1;
+		#print "IMG: orig: $imgcode\n";
+		if($imgcode =~ /src="(?<!http)([^"]*)"/is) {
+			my $imguri = $1;
+			#print "IMG: processing $imguri\n";
+			my $imgpath = $uri->decode($imguri);
+			$imgpath =~ s/.*\///;
+			my $thu = $self->config->{mediapath} . "thumb" . $imgpath;
+			my $newimgcode = $imgcode;
+			$newimgcode =~ s/(width|height)="[^"]*"//gs;
+			if(-e $thu) {
+				#print "IMG: is thumb\n";
+				$newimgcode =~ s/\Q$imguri\E/$self->config->{media} . "thumb" . $uri->encode($imgpath)/es;
+				$newimgcode = "<a href=\"" . $self->config->{media} . $imgpath . "\">$newimgcode<\/a>";
+			}
+			else {
+				#print "IMG: no thumb\n";
+				$newimgcode =~ s/\Q$imguri\E/$self->config->{media} . $imgpath/es;
+			}
+			$img{$imgcode} = $newimgcode;
+		}
+	}
+	foreach my $orig (keys %img) {
+		#print "IMG2: replacing $orig\n";
+		#print "           with $img{$orig}\n";
+		$html =~ s/\Q$orig\E/$img{$orig}/ges;
+	}
+	#$html =~ s/(src=")(?<!http)([^"]*)(")/$1 . $self->config->{media} . $2 . $3/ges;
 
 	return $html;
 }
@@ -281,7 +313,6 @@ use Git::Repository;
 use Git::Repository 'Log';
 use Config::General qw(ParseConfig);
 use File::Path qw(make_path);
-use Shell qw(cp);
 use Template;
 use Data::Dumper;
 use HTTP::Server::Brick;
@@ -337,7 +368,7 @@ if(! grep { $command eq $_ } @allowed) {
 
 sub generate {
 	eval {
-		$git = Git::Repository->new( work_tree => $config{repository} ) or die "Could not init git: $!\n";
+		$git = Git::Repository->new( work_tree => $config{repository} );
 	};
 	if($@) {
 		if(! $config{local}) {
@@ -352,27 +383,46 @@ sub generate {
 	my $root = &iterate(io('.'), 1);
 	chdir $workdir;
 
-	&genmenus($root);
-
-	&process($root);
-
 	make_path($config{mediapath}, { mode => 0755, verbose => 1 });
 
 	foreach my $img (@images) {
 		my $src = $img->realpath;
 		my $dst = $config{mediapath} . $img->filename;
+		my $thu = $config{mediapath} . "thumb" . $img->filename;
 		if (! -e $dst ) {
-			&log( "$src => $dst\n");
-			cp ($src, $dst);
+			&cpimg($src, $dst, $thu);
 		}
 		else {
 			my $mtime = (stat($dst))[9];
 			if($img->date > $mtime) {
-				&log("$src => $dst\n");
-				cp ($src, $dst);
+				&cpimg($src, $dst, $thu);
 			}
 		}
 	}
+
+	&genmenus($root);
+	&process($root);
+}
+
+sub cpimg {
+	my($src, $dst, $thu) = @_;
+	&log( "Copying image $src => $dst\n");
+
+	system("cp \"$src\" \"$dst\"");
+
+	open ID, "identify \"$src\"|";
+	my $id = <ID>;
+	close ID;
+
+	if($id =~ / (\d+?)x(\d+?) /) {
+		my $width = $1;
+		my $height= $2;
+  		if($width > 500) {
+			&log("Image is too big ($width x $height), resizing");
+			system("convert -size 500x500 \"$src\" -resize 500x500 \"$thu\"");
+		}
+	}
+
 }
 
 sub genmenus {
@@ -724,9 +774,9 @@ sub watch {
 	my $gitmode = 1;
 	if(! $git) {
 		eval {
-			$git = Git::Repository->new( work_tree => $config{repository} ) or die "Could not init git: $!\n";
+			$git = Git::Repository->new( work_tree => $config{repository} );
 		};
-		if($@ || ! -d "$config{repository}/.git") {
+		if($@) {
 			print STDERR "$config{repository} is not a git repository!\n";
 			print STDERR "Watching in filesystem mode.\n";
 			$gitmode = 0;

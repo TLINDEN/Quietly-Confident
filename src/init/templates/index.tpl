@@ -10,17 +10,17 @@
     <meta name="keywords" content="[% keywords %]">
     <meta name="description" content="[% description %]">
 
-    <link href="[% config.baseuri %]/css/bootstrap.min.css" rel="stylesheet">
-    <link href="[% config.baseuri %]/css/bootstrap-responsive.css" rel="stylesheet">
-    <link href="[% config.baseuri %]/css/local.css" rel="stylesheet">
+    <link href="[% config.baseuri %]css/bootstrap.min.css" rel="stylesheet">
+    <link href="[% config.baseuri %]css/bootstrap-responsive.css" rel="stylesheet">
+    <link href="[% config.baseuri %]css/local.css" rel="stylesheet">
 
     <!-- Le HTML5 shim, for IE6-8 support of HTML5 elements -->
     <!-- Javascript files are disabled in the default template. enable them by removing the comment, if you need it -->
     <!--[if lt IE 9]>
-      <script src="[% config.baseuri %]/js/html5.js"></script>
+      <script src="[% config.baseuri %]js/html5.js"></script>
     <![endif]-->
-    <script src="[% config.baseuri %]/js/jquery.js"></script>
-    <script src="[% config.baseuri %]/js/bootstrap.js"></script>
+    <script src="[% config.baseuri %]js/jquery.js"></script>
+    <script src="[% config.baseuri %]js/bootstrap.js"></script>
    [% PROCESS header %]
   </head>
 
