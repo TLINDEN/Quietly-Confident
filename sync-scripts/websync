@@ -1,0 +1,37 @@
+#!/bin/sh
+#
+# small helper for windows cygwin users to sync a
+# directory containing static site sources with
+# a remote server.
+#
+# requires cywin and inside cygwin: rsync + openssh.
+# ssh account needs to have public-key installed
+# and the key has to be password-less.
+#
+# you might consider changing some of the variables
+# on top of this file according to your environment.
+#
+# part of Quietly::Confident tool suite.
+#
+# 2012 T.LINDEN.
+#
+# Perl Artificial License
+
+source="/cygdrive/c/temp/WWW"
+dest="USER@REMOTESERVER:tmp" # contains WWW afterwards!
+log="/cygdrive/c/temp/log"
+
+opts="-r -v --force --del -h --progress --log-file=$log -u"
+
+echo "Synchronisiere $source to $dest. Bitte Warten."
+
+rsync $opts -e ssh $source $dest
+
+
+
+(
+    trap 'echo "^drop to shell"; bash' 2
+    echo -n "<ENTER> zum Beenden, <CTRL-C> fuer Shell> "
+    read ignore
+    exit 0
+)
