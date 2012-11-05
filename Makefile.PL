@@ -6,6 +6,7 @@ WriteMakefile(
               'VERSION_FROM' => 'qc',
               'PREREQ_PM'    => {
                                  'Moo' => 0,
+				 'URI::Encode' => 0,
                                  'Sub::Quote' => 0,
                                  'Text::Markdown' => 0,
                                  'Git::Repository' => 0,
