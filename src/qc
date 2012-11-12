@@ -5,7 +5,7 @@
 # by TLINDEN <tlinden@cpan.org>
 # http://www.daemon.de/QuietlyConfident
 
-our $VERSION = '0.07';
+our $VERSION = '0.08';
 
 sub path2public {
 	# convert a given physical source path
@@ -32,6 +32,7 @@ use Moo;
 use Sub::Quote;
 use Data::Dumper;
 use IO::All -utf8;
+use Encode;
 
 has ioall => (
         is => 'rw'
@@ -69,7 +70,7 @@ sub caption {
 	$cap =~ s/[\.\-_ ]*/ /;     # punctuation to space
 	$cap =~ s/^\s*//;
 	chomp $cap;
-	return $cap;
+	return Encode::decode_utf8($cap);
 }
 
 sub dstpath {
@@ -160,6 +161,7 @@ sub cleanhtml {
 	$html =~ s/<(span|font|html|body).*?>//sig;
 	$html =~ s/<\/(font|span|html|body)>//sig;
 	$html =~ s/class=[\w]*//gis;
+        $html =~ s/style=".*?"//gis;
 	$html =~ s/(style|class)=(\"|\').*?(\"|\')//sig;
 
 	# remove Microsoft artifacts
@@ -260,7 +262,7 @@ sub caption {
 	$cap =~ s/[\.\-_ ]*/ /;     # punctuation to space
 	$cap =~ s/^\s*//;
 	chomp $cap;
-	return $cap;
+	return Encode::decode_utf8($cap);
 }
 
 sub dstpath {
@@ -319,7 +321,7 @@ use HTTP::Server::Brick;
 use POSIX qw( WNOHANG setsid );
 use IO::All -utf8;
 
-my %types = qw(jpg image png image jpeg image gif image txt markdown md markdown html html htm html pod pod);
+my %types = qw(jpg image png image jpeg image gif image txt markdown md markdown html html htm html pod pod xhtml html);
 my %config;
 my %menu;
 my @images;
@@ -426,24 +428,25 @@ sub cpimg {
 }
 
 sub genmenus {
-	my $gitdir = shift;
-	my $level  = $gitdir->level;
-	my @menu   = $gitdir->menu;
+  require Encode;
+  my $gitdir = shift;
+  my $level  = $gitdir->level;
+  my @menu   = $gitdir->menu;
 
-	my $path = $gitdir->htmlpath;
-	if($path eq '/') {
-		$path = "root";
-	}
+  my $path = $gitdir->htmlpath;
+  if($path eq '/') {
+    $path = "root";
+  }
 
-	if ($gitdir->dstpath =~ /^blog/) {
-	  $menu{$path} = [];
-	  return;
-	}
+  if ($gitdir->dstpath =~ /^blog/) {
+    $menu{$path} = [];
+    return;
+  }
 
-	$menu{$path} = \@menu;
-	foreach my $dir (@{$gitdir->dirs}) {
-		&genmenus($dir);
-	}
+  $menu{$path} = \@menu;
+  foreach my $dir (@{$gitdir->dirs}) {
+    &genmenus($dir);
+  }
 }
 
 sub processblog {
@@ -572,7 +575,7 @@ sub process {
 			       content => $gitfile->content,
 			       keywords => $gitfile->keywords,
 			       description => $gitfile->description,
-			       title => $title }, $gitfile->dstpath) or die $t->error() . "\n";
+			       title => $title }, $gitfile->dstpath, { binmode => ':utf8' }) or die $t->error() . "\n";
   }
   
   if(! $gitdir->hasindex) {
@@ -582,7 +585,7 @@ sub process {
 			       level => $gitdir->level, 
 			       menu => \%menu, 
 			       content => '', 
-			       title => $gitdir->caption }, $gitdir->indexpath) or die $t->error() . "\n";
+                               title => $gitdir->caption }, $gitdir->indexpath, { binmode => ':utf8' }) or die $t->error() . "\n";
   }
   
   if( $gitdir->hasdirs) {
@@ -761,7 +764,8 @@ sub daemon {
 
 	select LOG;
 	open ERRLOG, ">$workdir/qc.stderr";
-	*STDERR = *ERRLOG;
+	#*STDERR = *ERRLOG;
+	open STDERR, ">&", \*ERRLOG;
 	$| = 1;
 
 	&log("$0 started in daemon mode in $workdir with pid $$");
@@ -772,16 +776,18 @@ sub daemon {
 sub watch {
 	my ($git) = @_;
 	my $gitmode = 1;
-	print STDERR Dumper($git);
 	if(! $git) {
-		eval {
-			$git = Git::Repository->new( work_tree => $config{repository} );
-		};
+		$git = eval { Git::Repository->new( work_tree => $config{repository} ); };
+	
+		&log("\$\@: <$@>");
+	
 		if($@ || ! -d "$config{repository}/.git") {
 			print STDERR "$config{repository} is not a git repository!\n";
 			print STDERR "Watching in filesystem mode.\n";
 			$gitmode = 0;
 		}
+
+
 	}
 	if($gitmode) {
 		&log("gitwatch");
