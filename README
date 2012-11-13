@@ -1,5 +1,5 @@
 NAME
-    Quietly Confident - a static git-aware site generator written in perl.
+    Quietly::Confident - a static git-aware site generator written in perl.
 
 SYNOPSYS
      Usage: qc <command> [<working directory>]
@@ -50,9 +50,9 @@ Installation
 
     or:
 
-            $ wget http://search.cpan.org/CPAN/authors/id/T/TL/TLINDEN/Quietly-Confident-0.08.tar.gz
-            $ tar xfz Quietly-Confident-0.08.tar.gz
-            $ cd Quietly-Confident-0.08
+            $ wget http://search.cpan.org/CPAN/authors/id/T/TL/TLINDEN/Quietly-Confident-0.09.tar.gz
+            $ tar xfz Quietly-Confident-0.09.tar.gz
+            $ cd Quietly-Confident-0.09
 
     Install it:
 
@@ -230,10 +230,8 @@ What kind of weird name is this for a static site generator?
     [GSV Sleeper Service](http://en.wikipedia.org/wiki/GSV_Sleeper_Service).
 
 Bugs and issues
-    One might assume that the version number 0.08 suggests that the tool is
-    in a quite early stage. Well, that's right. Just file an issue at Github
-    if you find a bug or think it doesn't behave as predicted. Patches are
-    most welcome though.
+    Just file an issue at Github if you find a bug or think it doesn't
+    behave as predicted. Patches are most welcome though.
 
 One last thing
     There are thousands of static site generators out there. Why the ckin

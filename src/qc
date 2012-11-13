@@ -5,7 +5,7 @@
 # by TLINDEN <tlinden@cpan.org>
 # http://www.daemon.de/QuietlyConfident
 
-our $VERSION = '0.08';
+our $VERSION = '0.09';
 
 sub path2public {
 	# convert a given physical source path
@@ -15,6 +15,14 @@ sub path2public {
 	$path =~ s/^\.\///;  # remove ./
 	foreach my $part (split /\//, $path) {
 		$part =~ s/^\d*[\.\-_ ]*//;    # remove leading number
+
+		# replace some known german umlauts by its 7bit
+		# counterparts
+		$part =~ s/ä/ae/gi;
+		$part =~ s/ö/oe/gi;
+		$part =~ s/ü/ue/gi;
+		$part =~ s/�/ae/gi;
+
 		$part =~ s/([^\w\.])/_/g;      # non word to dash
 		$part =~s/([A-Z])/lc($1)/ge;   # lowercase for urls
 		push @out, $part;
@@ -155,22 +163,38 @@ sub filename {
 }
 
 sub cleanhtml {
-	# remove headers and styling
-	my ($self, $html) = @_;
-	$html =~ s/<head>.*?<\/head>//sig;
-	$html =~ s/<(span|font|html|body).*?>//sig;
-	$html =~ s/<\/(font|span|html|body)>//sig;
-	$html =~ s/class=[\w]*//gis;
-        $html =~ s/style=".*?"//gis;
-	$html =~ s/(style|class)=(\"|\').*?(\"|\')//sig;
+  # remove headers and styling
+  my ($self, $html) = @_;
+  $html =~ s/<head>.*?<\/head>//sig;
+  $html =~ s/<(span|font|html|body).*?>//sig;
+  $html =~ s/<\/(font|span|html|body)>//sig;
+  #$html =~ s/class=[\w]*//gis;
+  $html =~ s/(style|class|id)=(\"|\').*?(\"|\')//sig;
+  $html =~ s/<\?xml.*?\?>//sig;
+  $html =~ s/<!DOCTYPE.*?>//sig;
 
-	# remove Microsoft artifacts
-	$html =~ s/<o:p>[^<]*<\/o:p>//sig;
-	$html =~ s/<p\s*>\s*<\/p>//sig;
-	# <![if !supportLists]>
-	$html =~ s/<\!?\[[^\]]*\]>//sig;
-	return $html;
+  # remove Microsoft artifacts
+  $html =~ s/<o:p>[^<]*<\/o:p>//sig;
+  $html =~ s/<p\s*>\s*<\/p>//sig;
+  # <![if !supportLists]>
+  $html =~ s/<\!?\[[^\]]*\]>//sig;
+
+  # try to remove redundant linebreaks
+  my($para);
+  $html =~ s{(?<=<p>)(.*?)(?=<\/p>)}
+	    {
+	      $para = $1;
+	      if ($para !~ /<pre>/) {
+		# not preformatted
+		$para =~ s#<br[^>]*?># #gs;
+		$para =~ s#<br># #gs;
+	      }
+	      $para;
+	    }exgs;
+
+  return $html;
 }
+
 
 sub content {
         my $self = shift;
