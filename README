@@ -50,9 +50,9 @@ Installation
 
     or:
 
-            $ wget http://search.cpan.org/CPAN/authors/id/T/TL/TLINDEN/Quietly-Confident-0.09.tar.gz
-            $ tar xfz Quietly-Confident-0.09.tar.gz
-            $ cd Quietly-Confident-0.09
+            $ wget http://search.cpan.org/CPAN/authors/id/T/TL/TLINDEN/Quietly-Confident-0.10.tar.gz
+            $ tar xfz Quietly-Confident-0.10.tar.gz
+            $ cd Quietly-Confident-0.10
 
     Install it:
 

@@ -5,112 +5,121 @@
 # by TLINDEN <tlinden@cpan.org>
 # http://www.daemon.de/QuietlyConfident
 
-our $VERSION = '0.09';
+our $VERSION = '0.10';
+
+
+package Quietly::Confident::Role;
+use Moo::Role;
 
 sub path2public {
-	# convert a given physical source path
-	# to output path without numbering, special chars etc
-	my ($path, $isfile) = @_;
-	my @out;
-	$path =~ s/^\.\///;  # remove ./
-	foreach my $part (split /\//, $path) {
-		$part =~ s/^\d*[\.\-_ ]*//;    # remove leading number
+  # convert a given physical source path
+  # to output path without numbering, special chars etc
+  my ($self, $isfile) = @_;
+  my @out;
+  my $path = $self->ioall->name;
 
-		# replace some known german umlauts by its 7bit
-		# counterparts
-		$part =~ s/ä/ae/gi;
-		$part =~ s/ö/oe/gi;
-		$part =~ s/ü/ue/gi;
-		$part =~ s/�/ae/gi;
+  $path =~ s/^\.\///;  # remove ./
+  foreach my $part (split /\//, $path) {
+    $part =~ s/^\d*[\.\-_ ]*//;    # remove leading number
 
-		$part =~ s/([^\w\.])/_/g;      # non word to dash
-		$part =~s/([A-Z])/lc($1)/ge;   # lowercase for urls
-		push @out, $part;
-	}
-	my $normalized = join '/', @out;
-	if($isfile) {
-		$normalized =~ s/index\.[a-zA-Z]*$//;
-		$normalized =~ s/\.[a-zA-Z]*$/\//;
-	}
-	return $normalized;
+    # replace some known german umlauts by its 7bit
+    # counterparts
+    $part =~ s/ä/ae/gi;
+    $part =~ s/ö/oe/gi;
+    $part =~ s/ü/ue/gi;
+    $part =~ s/�/ae/gi;
+
+    $part =~ s/([^\w\.])/_/g;      # non word to dash
+    $part =~s/([A-Z])/lc($1)/ge;   # lowercase for urls
+    push @out, $part;
+  }
+  my $normalized = join '/', @out;
+  if($isfile) {
+    $normalized =~ s/index\.[a-zA-Z]*$//;
+    $normalized =~ s/\.[a-zA-Z]*$/\//;
+  }
+  return $normalized;
 }
 
-package Gitdir;
+sub caption {
+  my $self = shift;
+  my $cap = $self->ioall->name;
+  $cap =~ s/.*\///;           # remove leading path parts
+  $cap =~ s/\.[^\.]*$//;      # remove suffix
+  $cap =~ s/^\d*[\.\-_ ]*//;  # remove leading number
+  $cap =~ s/[\.\-_ ]*/ /;     # punctuation to space
+  $cap =~ s/^\s*//;
+  chomp $cap;
+  return Encode::decode_utf8($cap);
+}
+
+has ioall    => ( is => 'rw' );
+has config   => ( is => 'rw' );
+1;
+
+##########################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+package Quietly::Confident::Dir;
 use Moo;
 use Sub::Quote;
 use Data::Dumper;
 use IO::All -utf8;
 use Encode;
 
-has ioall => (
-        is => 'rw'
-);
+with('Quietly::Confident::Role');
 
-has hasindex => (
-        is => 'rw'
-);
+has hasindex => ( is => 'rw' );
+has hasfiles => ( is => 'rw' );
+has level    => ( is => 'rw' );
+has hasdirs  => ( is => 'rw' );
+has files    => ( is => 'rw' );
+has dirs     => ( is => 'rw' );
 
-has hasfiles => (
-        is => 'rw'
-);
-
-has level => (
-        is => 'rw'
-);
-
-has hasdirs => (
-        is => 'rw'
-);
-
-has files => (
-        is => 'rw'
-);
-
-has dirs => (
-        is => 'rw'
-);
-
-sub caption {
-	my $self = shift;
-	my $cap = $self->ioall->name;
-	$cap =~ s/.*\///;           # remove leading path parts
-	$cap =~ s/^\d*[\.\-_ ]*//;  # remove leading number
-	$cap =~ s/[\.\-_ ]*/ /;     # punctuation to space
-	$cap =~ s/^\s*//;
-	chomp $cap;
-	return Encode::decode_utf8($cap);
-}
 
 sub dstpath {
-	my $self = shift;
-	return main::path2public($self->ioall->name);
+  my $self = shift;
+  return $self->path2public();
 }
 
 sub htmlpath {
-	my $self = shift;
-	return main::path2public($self->ioall->name) . '/';
+  my $self = shift;
+  return $self->path2public() . '/';
 }
 
 sub indexpath {
-	# only used for nonexistent index.html outputs
-	my $self = shift;
-	return $self->dstpath . '/index.html';
+  # only used for nonexistent index.html outputs
+  my $self = shift;
+  return $self->dstpath . '/index.html';
 }
 
 sub menu {
-	my $self = shift;
-	my @objects = @{$self->dirs};
+  my $self = shift;
+  my @objects = @{$self->dirs};
 
-	push @objects, grep { ! $_->isindex } @{$self->files};
-	
-	my @menu = map { { href => $_->htmlpath, cap => $_->caption } } sort { $a->ioall->name cmp $b->ioall->name } @objects;
-	return @menu;
+  push @objects, grep { ! $_->isindex } @{$self->files};
+
+  my @menu = map { { href => $_->htmlpath, cap => $_->caption } } sort { $a->ioall->name cmp $b->ioall->name } @objects;
+  return @menu;
 }
 
 1;
 #####################################
 
-package Gitfile;
+package Quietly::Confident::File;
 use Moo;
 use Sub::Quote;
 use Text::Markdown 'markdown';
@@ -118,48 +127,23 @@ use Pod::Html;
 use IO::All -utf8;
 use URI::Encode;
 
-has ioall => (
-        is => 'rw'
-);
+with('Quietly::Confident::Role');
 
-has type => (
-        is => 'rw'
-);
+has type    => ( is => 'rw' );
+has date    => ( is => 'rw' );
+has by      => ( is => 'rw' );
+has raw     => ( is => 'rw' );
+has isindex => ( is => 'rw' );
 
-has date => (
-        is => 'rw'
-);
-
-has by => (
-        is => 'rw'
-);
-
-has raw => (
-        is => 'rw'
-);
-
-has git => (
-        is => 'rw'
-);
-
-has isindex => (
-        is => 'rw'
-);
-
-has config => (
-        is => 'rw'
-);
 
 sub realpath {
-	my $self = shift;
-	return io->catfile($self->config->{repository}, $self->ioall->name);
+  my $self = shift;
+  return io->catfile($self->config->{repository}, $self->ioall->name);
 }
 
 sub filename {
-	my $self = shift;
-	my $path = $self->ioall->name;
-	$path =~ s/.*\///;
-	return $path;
+  my $self = shift;
+  return $self->ioall->filename;
 }
 
 sub cleanhtml {
@@ -168,7 +152,6 @@ sub cleanhtml {
   $html =~ s/<head>.*?<\/head>//sig;
   $html =~ s/<(span|font|html|body).*?>//sig;
   $html =~ s/<\/(font|span|html|body)>//sig;
-  #$html =~ s/class=[\w]*//gis;
   $html =~ s/(style|class|id)=(\"|\').*?(\"|\')//sig;
   $html =~ s/<\?xml.*?\?>//sig;
   $html =~ s/<!DOCTYPE.*?>//sig;
@@ -197,138 +180,120 @@ sub cleanhtml {
 
 
 sub content {
-        my $self = shift;
-	my ($html, $raw);
-	if($self->raw) {
-		$raw = $self->raw;
-	}
-	else {
-        	$raw = io($self->realpath)->slurp;
-		$self->raw($raw);
-	}
-        if($self->type eq 'markdown') {
-                $html = markdown($raw);
-        }
-	elsif($self->type eq 'html') {
-		$html = $self->cleanhtml($raw);
-	}
-	elsif($self->type eq 'pod') {
-		my $raw = io("pod2html " . $self->realpath . "|")->slurp;
-		#open POD, "pod2html " . $self->realpath . "|";
-		#my $raw = join '', <POD>;
-		#close POD;
-		$html = $self->cleanhtml($raw);
-	}
-        else {
-                $html = $raw;
-        }
+  my $self = shift;
+  my ($html, $raw);
+  if($self->raw) {
+    $raw = $self->raw;
+  }
+  else {
+    $raw = io($self->realpath)->slurp;
+    $self->raw($raw);
+  }
+  if($self->type eq 'markdown') {
+    $html = markdown($raw);
+  }
+  elsif($self->type eq 'html') {
+    $html = $self->cleanhtml($raw);
+  }
+  elsif($self->type eq 'pod') {
+    my $raw = io("pod2html " . $self->realpath . "|")->slurp;
+    $html = $self->cleanhtml($raw);
+  }
+  else {
+    $html = $raw;
+  }
 
-	# FIXME: link to thumb
-	my $uri = URI::Encode->new( { encode_reserved => 0 } );
-	my %img;
-	while ($html =~ /(<img[^>]*>)/gsi) {
-		my $imgcode = $1;
-		#print "IMG: orig: $imgcode\n";
-		if($imgcode =~ /src="(?<!http)([^"]*)"/is) {
-			my $imguri = $1;
-			#print "IMG: processing $imguri\n";
-			my $imgpath = $uri->decode($imguri);
-			$imgpath =~ s/.*\///;
-			my $thu = $self->config->{mediapath} . "thumb" . $imgpath;
-			my $newimgcode = $imgcode;
-			$newimgcode =~ s/(width|height)="[^"]*"//gs;
-			if(-e $thu) {
-				#print "IMG: is thumb\n";
-				$newimgcode =~ s/\Q$imguri\E/$self->config->{media} . "thumb" . $uri->encode($imgpath)/es;
-				$newimgcode = "<a href=\"" . $self->config->{media} . $imgpath . "\">$newimgcode<\/a>";
-			}
-			else {
-				#print "IMG: no thumb\n";
-				$newimgcode =~ s/\Q$imguri\E/$self->config->{media} . $imgpath/es;
-			}
-			$img{$imgcode} = $newimgcode;
-		}
-	}
-	foreach my $orig (keys %img) {
-		#print "IMG2: replacing $orig\n";
-		#print "           with $img{$orig}\n";
-		$html =~ s/\Q$orig\E/$img{$orig}/ges;
-	}
-	#$html =~ s/(src=")(?<!http)([^"]*)(")/$1 . $self->config->{media} . $2 . $3/ges;
+  my $uri = URI::Encode->new( { encode_reserved => 0 } );
+  my %img;
+  while ($html =~ /(<img[^>]*>)/gsi) {
+    my $imgcode = $1;
+    #print "IMG: orig: $imgcode\n";
+    if($imgcode =~ /src="(?<!http)([^"]*)"/is) {
+      my $imguri = $1;
+      #print "IMG: processing $imguri\n";
+      my $imgpath = $uri->decode($imguri);
+      $imgpath =~ s/.*\///;
+      my $thu = $self->config->{mediapath} . "thumb" . $imgpath;
+      my $newimgcode = $imgcode;
+      $newimgcode =~ s/(width|height)="[^"]*"//gs;
+      if(-e $thu) {
+	#print "IMG: is thumb\n";
+	$newimgcode =~ s/\Q$imguri\E/$self->config->{media} . "thumb" . $uri->encode($imgpath)/es;
+	$newimgcode = "<a href=\"" . $self->config->{media} . $imgpath . "\">$newimgcode<\/a>";
+      }
+      else {
+	#print "IMG: no thumb\n";
+	$newimgcode =~ s/\Q$imguri\E/$self->config->{media} . $imgpath/es;
+      }
+      $img{$imgcode} = $newimgcode;
+    }
+  }
+  foreach my $orig (keys %img) {
+    #print "IMG2: replacing $orig\n";
+    #print "           with $img{$orig}\n";
+    $html =~ s/\Q$orig\E/$img{$orig}/ges;
+  }
 
-	return $html;
+  return $html;
 }
 
 sub description {
-	my $self = shift;
-	my $html = $self->content;
-	my $des = "";
-	if($html =~ /<p>([^<]*)<\/p>/s) {
-		$des = $1;
-		$des =~ s/<\/?[^>]*//s;
-	}
-	return $des;
+  my $self = shift;
+  my $html = $self->content;
+  my $des = "";
+  if($html =~ /<p>([^<]*)<\/p>/s) {
+    $des = $1;
+    $des =~ s/<\/?[^>]*//s;
+  }
+  return $des;
 }
 
 sub keywords {
-	my $self = shift;
-	my $des = $self->description;
-	my @words = grep { length($_) > 5 } split /\s\s*/, $des;
-	return join ',', @words;
-}
-
-sub caption {
-	my $self = shift;
-	my $cap = $self->ioall->name;
-	$cap =~ s/.*\///;           # remove leading path parts
-	$cap =~ s/\.[^\.]*$//;      # remove suffix
-	$cap =~ s/^\d*[\.\-_ ]*//;  # remove leading number
-	$cap =~ s/[\.\-_ ]*/ /;     # punctuation to space
-	$cap =~ s/^\s*//;
-	chomp $cap;
-	return Encode::decode_utf8($cap);
+  my $self = shift;
+  my $des = $self->description;
+  my @words = grep { length($_) > 5 } split /\s\s*/, $des;
+  return join ',', @words;
 }
 
 sub dstpath {
-	# physical destination file
-        my $self = shift;
-	my $out  = main::path2public($self->ioall->name, 1);
-	return $out . "index.html";
+  # physical destination file
+  my $self = shift;
+  my $out  = $self->path2public(1);
+  return $out . "index.html";
 }
 
 sub htmlpath {
-	# used for links
-	my $self = shift;
-	my $out  = main::path2public($self->ioall->name, 1);
-	return $out;
+  # used for links
+  my $self = shift;
+  return $self->path2public(1);
 }
 
 sub blogpath {
-	# used for blog entries
-	my $self = shift;
-	my $out  = main::path2public($self->ioall->name, 1);
-	$out =~ s/^blog[^\/]*//;
-	$out =~ s/\///g;
-	my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime($self->date);
-	$mon++;
-	$year += 1900;
-	$out = sprintf "blog/%04d/%02d/%02d/$out/", $year, $mon, $mday;
-	return $out;
+  # used for blog entries
+  my $self = shift;
+  my $out  = $self->path2public(1);
+  $out =~ s/^blog[^\/]*//;
+  $out =~ s/\///g;
+  my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime($self->date);
+  $mon++;
+  $year += 1900;
+  $out = sprintf "blog/%04d/%02d/%02d/$out/", $year, $mon, $mday;
+  return $out;
 }
 
 sub dstblogpath {
-	# physical destination file
-        my $self = shift;
-	my $out  = $self->blogpath;
-	return $out . "index.html";
+  # physical destination file
+  my $self = shift;
+  my $out  = $self->blogpath;
+  return $out . "index.html";
 }
 
 sub basepath {
-	# dir one level above
-	my $self = shift;
-	my $out  = main::path2public($self->ioall->name, 1);
-	$out     =~ s/\/[^\/]*\/$/\//;
-	return $out;
+  # dir one level above
+  my $self = shift;
+  my $out  = $self->path2public(1);
+  $out     =~ s/\/[^\/]*\/$/\//;
+  return $out;
 }
 
 #####################################
@@ -350,104 +315,112 @@ my %config;
 my %menu;
 my @images;
 my $git;
-my $command = shift;
-my $workdir = shift;
+my $command = shift || '';
+my $workdir = shift || '';
+my $param   = shift || '';
 
 if(! $command) {
-	$command = "usage";
+  $command = "usage";
 }
 
-if($workdir) {
-	if (! -d $workdir) {
-		print STDERR "workdir $workdir does not exist or is not accessible!\n";
-		exit 1;
-	}
-	else {
-		chdir $workdir;
-	}
-}
-else {
-	$workdir = `pwd`;
-	chomp $workdir;
+if (! $param && $workdir =~ /^[\d\.:]*$/) {
+  # workdir is host:port
+  $param = $workdir;
+  $workdir = '';
 }
 
-if(-e "qc.conf") {
-	%config = ParseConfig(-ConfigFile => "qc.conf", -AutoTrue => 1);
+if ($workdir) {
+  if (! -d $workdir) {
+    print STDERR "workdir $workdir does not exist or is not accessible!\n";
+    exit 1;
+  }
+  else {
+    $workdir = io($workdir);
+    $workdir->chdir;
+  }
 }
 else {
-	if($command ne "init") {
-		die "Could not open config file qc.conf!\nConsider running $0 init\n";
-	}
+  $workdir = io->curdir->absolute;
+  &log("workdir: $workdir");
+}
+
+if (-e "qc.conf") {
+  %config = ParseConfig(-ConfigFile => "qc.conf", -AutoTrue => 1);
+}
+else {
+  if ($command ne "init") {
+    die "Could not open config file qc.conf!\nConsider running $0 init\n";
+  }
 }
 
 no strict "refs";
 my @allowed = qw(watch daemon init generate serve);
-if(! grep { $command eq $_ } @allowed) {
-	print "Unknown command $command!\n";
-	print "$@\n";
-	&usage;
+if (! grep { $command eq $_ } @allowed) {
+  print "Unknown command $command!\n";
+  print "$@\n";
+  &usage;
 }
 
 &$command;
 
+# main end
 
 
 sub generate {
-	eval {
-		$git = Git::Repository->new( work_tree => $config{repository} );
-	};
-	if($@) {
-		if(! $config{local}) {
-			die $@;
-		}
-		else {
-			$@ = '';
-		}
-	}
-	chdir $config{repository};
+  eval {
+    $git = Git::Repository->new( work_tree => $config{repository} );
+  };
+  if ($@) {
+    if (! $config{local}) {
+      die $@;
+    } else {
+      $@ = '';
+    }
+  }
+  chdir $config{repository};
 
-	my $root = &iterate(io('.'), 1);
-	chdir $workdir;
+  my $root = &iterate(io('.'), 1);
+  $workdir->chdir;
 
-	make_path($config{mediapath}, { mode => 0755, verbose => 1 });
+  make_path($config{mediapath}, { mode => 0755, verbose => 1 });
 
-	foreach my $img (@images) {
-		my $src = $img->realpath;
-		my $dst = $config{mediapath} . $img->filename;
-		my $thu = $config{mediapath} . "thumb" . $img->filename;
-		if (! -e $dst ) {
-			&cpimg($src, $dst, $thu);
-		}
-		else {
-			my $mtime = (stat($dst))[9];
-			if($img->date > $mtime) {
-				&cpimg($src, $dst, $thu);
-			}
-		}
-	}
+  foreach my $img (@images) {
+    my $src = $img->realpath;
+    my $dst = $config{mediapath} . $img->filename;
+    my $thu = $config{mediapath} . "thumb" . $img->filename;
+    if (! -e $dst ) {
+      &cpimg($src, $dst, $thu);
+    }
+    else {
+      my $mtime = (stat($dst))[9];
+      if ($img->date > $mtime) {
+	&cpimg($src, $dst, $thu);
+      }
+    }
+  }
 
-	&genmenus($root);
-	&process($root);
+  &genmenus($root);
+  &process($root);
 }
 
 sub cpimg {
-	my($src, $dst, $thu) = @_;
-	&log( "Copying image $src => $dst\n");
+  my($src, $dst, $thu) = @_;
+  &log( "Copying image $src => $dst\n");
 
-	system("cp \"$src\" \"$dst\"");
+  system("cp \"$src\" \"$dst\"");
 
-	open ID, "identify \"$src\"|";
-	my $id = <ID>;
-	close ID;
+  open ID, "identify \"$src\"|";
+  my $id = <ID>;
+  close ID;
 
-	if($id =~ / (\d+?)x(\d+?) /) {
-		my $width = $1;
-		my $height= $2;
-  		if($width > 500) {
-			&log("Image is too big ($width x $height), resizing");
-			system("convert -size 500x500 \"$src\" -resize 500x500 \"$thu\"");
-		}
-	}
+  if ($id =~ / (\d+?)x(\d+?) /) {
+    my $width = $1;
+    my $height= $2;
+    if ($width > 500) {
+      &log("Image is too big ($width x $height), resizing");
+      system("convert -size 500x500 \"$src\" -resize 500x500 \"$thu\"");
+    }
+  }
 
 }
 
@@ -458,7 +431,7 @@ sub genmenus {
   my @menu   = $gitdir->menu;
 
   my $path = $gitdir->htmlpath;
-  if($path eq '/') {
+  if ($path eq '/') {
     $path = "root";
   }
 
@@ -484,29 +457,26 @@ sub processblog {
       my @page;
       if ($curlen >= $max) {
 	@page = splice(@posts, 0, $max);
-      }
-      else {
+      } else {
 	@page = splice(@posts, 0);
       }
       push @pages, \@page;
     }
-  }
-  else {
+  } else {
     push @pages, \@posts;
   }
-  
 
-  my $t = Template->new(
-			{ OUTPUT_PATH  => $config{public},
-			  INCLUDE_PATH => $config{templates},
-			  INTERPOLATE  => 1 }) || die "$Template::ERROR\n";
+  my $t = Template->new({
+			 OUTPUT_PATH  => $config{public},
+			 INCLUDE_PATH => $config{templates},
+			 INTERPOLATE  => 1 }) || die "$Template::ERROR\n";
   my $pagenum = 0;
   foreach my $page (@pages) {
     my $dir = $gitdir->dstpath;
     if ($pagenum > 0) {
       $dir .= "/page/$pagenum";
     }
-    if(! -d "$config{public}/$dir" ) {
+    if (! -d "$config{public}/$dir" ) {
       make_path("$config{public}/$dir", { mode => 0755, verbose => 1 });
     }
 
@@ -548,7 +518,7 @@ sub processblog {
 
     foreach my $post (@{$page}) {
       &log( "Processing: blog post page " . $post->blogpath);
-      
+
       $t->process( 'post.tpl', { config      => \%config,
 				 post        => $post,
 				 menu        => \%menu,
@@ -568,7 +538,7 @@ sub process {
 
   my $dir    = "$config{public}/" . $gitdir->dstpath;
 
-  if(! -d "$dir" ) {
+  if (! -d "$dir" ) {
     make_path("$dir", { mode => 0755, verbose => 1 });
   }
 
@@ -577,17 +547,16 @@ sub process {
     return;
   }
 
-  my $t = Template->new(
-			{ OUTPUT_PATH  => $config{public},
-			  INCLUDE_PATH => $config{templates},
-			  INTERPOLATE  => 1 }) || die "$Template::ERROR\n";
- 
+  my $t = Template->new({
+			 OUTPUT_PATH  => $config{public},
+			 INCLUDE_PATH => $config{templates},
+			 INTERPOLATE  => 1 }) || die "$Template::ERROR\n";
+
   foreach my $gitfile (@{$gitdir->files}) {
     my $title = $gitfile->caption;
-    if($gitdir->level == 1  && $gitfile->isindex) {
+    if ($gitdir->level == 1  && $gitfile->isindex) {
       $title = $config{sitetitle};
-    }
-    elsif($gitfile->isindex) {
+    } elsif ($gitfile->isindex) {
       $title = $gitdir->caption;
     }
 
@@ -601,8 +570,8 @@ sub process {
 			       description => $gitfile->description,
 			       title => $title }, $gitfile->dstpath, { binmode => ':utf8' }) or die $t->error() . "\n";
   }
-  
-  if(! $gitdir->hasindex) {
+
+  if (! $gitdir->hasindex) {
     &log( "Processing: " . $gitdir->indexpath );
     $t->process( 'page.tpl', { config => \%config,
 			       basepath => $gitdir->htmlpath, 
@@ -611,8 +580,8 @@ sub process {
 			       content => '', 
                                title => $gitdir->caption }, $gitdir->indexpath, { binmode => ':utf8' }) or die $t->error() . "\n";
   }
-  
-  if( $gitdir->hasdirs) {
+
+  if ( $gitdir->hasdirs) {
     foreach my $dir (@{$gitdir->dirs}) {
       &process($dir);
     }
@@ -624,94 +593,100 @@ sub process {
 
 
 sub type {
-	my $file = shift;
-	if($file =~ /\.([^\.]*)$/i) {
-		my $suffix = $1;
-		if (exists $types{$suffix}) {
-			return $types{$suffix};
-		}
-	}
-	return 'unknown';
+  my $file = shift;
+  if ($file =~ /\.([^\.]*)$/i) {
+    my $suffix = $1;
+    if (exists $types{$suffix}) {
+      return $types{$suffix};
+    }
+  }
+  return 'unknown';
 }
 
 sub iterate {
-	my($dir, $level) = @_;
-	printf "Iterating in %s\n", $dir->name;
-	my $gitdir = Gitdir->new( files => [], dirs => [], hasindex => 0, hasdirs => 0, hasfiles => 0, level => $level);
-	$gitdir->ioall( $dir );
-	foreach my $file ($dir->all) {
-		my $path = "$file";
-		$path =~ s/^\.\///;
-		$file = io($path);
-		#my $ignore = $file->absolute->pathname; # magic, so that IO::All remembers where the files is located
-		if( $file->is_dir ) {
-			push @{$gitdir->{dirs}}, &iterate($file, $level + 1);
-			$gitdir->hasdirs(1);
-		}
-		else {
-			my $log;
-			eval { ($log) = Git::Repository->log( '-1', $file ) };
-			$@ = '';
-			my $gitfile;
-			if($log) {
-				$gitfile = Gitfile->new( ioall  => $file,
-							 config => \%config,
-					                 type   => &type($file),
-					                 date   => $log->committer_localtime,
-					                 by     => $log->committer_name );
-			}
-			else {
-				# not part of git, but use it if local option is set
-				if($config{local}) {
-					$gitfile = Gitfile->new( ioall  => $file,
-								 config => \%config,
-								 type   => &type($file),
-								 date   => $file->mtime,
-								 by     => (getpwuid($file->uid))[0] );
-					#print "ioall file: " . $file->absolute->pathname ."\n";
-				}
-			}
-			if($gitfile) {
-				$gitdir->hasfiles(1);
-				if($file =~ /^index\.(md|html|htm)$/) {
-					$gitdir->hasindex(1);
-					$gitfile->isindex(1);
-				}
-				if($gitfile->type eq 'image') {
-					push @images, $gitfile;
-				}
-				else {
-					push @{$gitdir->{files}}, $gitfile;
-				}
-			}
-		}
-	}
+  my($dir, $level) = @_;
+  printf "Iterating in %s\n", $dir->name;
+  my $gitdir = Quietly::Confident::Dir->new(
+					    files    => [],
+					    dirs     => [],
+					    hasindex => 0,
+					    hasdirs  => 0,
+					    hasfiles => 0,
+					    level    => $level );
+  $gitdir->ioall( $dir );
+  foreach my $file ($dir->all) {
+    my $path = "$file";
+    $path =~ s/^\.\///;
+    $file = io($path);
 
-	return $gitdir;
+    if ( $file->is_dir ) {
+      push @{$gitdir->{dirs}}, &iterate($file, $level + 1);
+      $gitdir->hasdirs(1);
+    }
+    else {
+      my $log;
+      eval { ($log) = Git::Repository->log( '-1', $file ) };
+      $@ = '';
+      my $gitfile;
+      if ($log) {
+	$gitfile = Quietly::Confident::File->new( ioall  => $file,
+						  config => \%config,
+						  type   => &type($file),
+						  date   => $log->committer_localtime,
+						  by     => $log->committer_name );
+      }
+      else {
+				# not part of git, but use it if local option is set
+	if ($config{local}) {
+	  $gitfile = Quietly::Confident::File->new( ioall  => $file,
+						    config => \%config,
+						    type   => &type($file),
+						    date   => $file->mtime,
+						    by     => (getpwuid($file->uid))[0] );
+	  #print "ioall file: " . $file->absolute->pathname ."\n";
+	}
+      }
+      if ($gitfile) {
+	$gitdir->hasfiles(1);
+	if ($file =~ /^index\.(md|html|htm)$/) {
+	  $gitdir->hasindex(1);
+	  $gitfile->isindex(1);
+	}
+	if ($gitfile->type eq 'image') {
+	  push @images, $gitfile;
+	}
+	else {
+	  push @{$gitdir->{files}}, $gitfile;
+	}
+      }
+    }
+  }
+
+  return $gitdir;
 }
 
 
 sub usage {
-	print qq(
+  print qq(
 Usage: $0 <command> [<working directory>]
 
 Avalable commands are:
- init      - initialize a new site
- generate  - generate static content from repository
- serve     - serve site on *.8080
- daemon    - detach from terminal and run in background
- watch     - watch for updates, same as daemon but in forreground
+ init               - initialize a new site
+ generate           - generate static content from repository
+ serve [[ip]:port]  - serve site via HTTP. defaults to $hostname:8080
+ daemon             - detach from terminal and run in background
+ watch              - watch for updates, same as daemon but in forreground
 
 );
-	exit 1;
+  exit 1;
 }
 
 
 sub init {
-        print "Creating qc.conf\n";
-        open C, ">qc.conf" or die "Could not open qc.conf: $!\n";
-        print C qq(
-#        
+  print "Creating qc.conf\n";
+  open C, ">qc.conf" or die "Could not open qc.conf: $!\n";
+  print C qq(
+#
 # config file for qc tool
 repository = source
 public     = public_html
@@ -721,172 +696,176 @@ baseuri    = /
 media      = /images/
 mediapath  = public_html/images/
 local      = yes
-);       
-        close C;
-         
-        print "Creating directories\n";
-        foreach my $dir (qw(source public_html templates public_html)) {
-                make_path($dir, { mode => 0755, verbose => 1 });
-        }
-         
-        print "Creating basic templates\n";
-        my $data = join "", <DATA>;
-        $data =~ s/^begin \d{3} IGNORE\n//;
-        $data =~ s/end$//;
-        my $zipfile = unpack("u", $data);
-         
-        open Z, ">init.zip" or die "Could not extract initialization data: $!\n";
-        print Z $zipfile;
-        close Z;
-         
-        system("unzip -q init.zip") and die "Could not unzip init data: $!\n";
-        unlink "init.zip";
+);
+  close C;
 
-        print "Creating static site\n";
-        %config = ParseConfig(-ConfigFile => 'qc.conf', -AutoTrue => 1);
+  print "Creating directories\n";
+  foreach my $dir (qw(source public_html templates public_html)) {
+    make_path($dir, { mode => 0755, verbose => 1 });
+  }
+
+  print "Creating basic templates\n";
+  my $data = join "", <DATA>;
+  $data =~ s/^begin \d{3} IGNORE\n//;
+  $data =~ s/end$//;
+  my $zipfile = unpack("u", $data);
+
+  open Z, ">init.zip" or die "Could not extract initialization data: $!\n";
+  print Z $zipfile;
+  close Z;
+
+  system("unzip -q init.zip") and die "Could not unzip init data: $!\n";
+  unlink "init.zip";
+
+  print "Creating static site\n";
+  %config = ParseConfig(-ConfigFile => 'qc.conf', -AutoTrue => 1);
 }
 
 sub serve {
-	my $httpd = HTTP::Server::Brick->new(port=>8080);
-	$httpd->mount('/' => { path => $config{public}});
-	$httpd->start;
+  my $host = '';
+  my $port = '8080';
+  if ($param) {
+    ($host, $port) = split /:/, $param;
+  }
+  my $httpd = HTTP::Server::Brick->new(host => $host, port => $port);
+  $httpd->mount('/' => { path => $config{public}});
+  $httpd->start;
 }
 
 sub daemon {
-	chdir $workdir;
-	my $git;
+  $workdir->chdir;
+  my $git;
 
-	$System::Command::QUIET = 1;
+  $System::Command::QUIET = 1;
 
-	open LOG, ">> $workdir/qc.log" or die "Could not open daemon logfile $workdir/qc.log: $!\n";
+  open LOG, ">> $workdir/qc.log" or die "Could not open daemon logfile $workdir/qc.log: $!\n";
 
-	$SIG{CHLD} = \&REAPER;
+  $SIG{CHLD} = \&REAPER;
 
-	my $pid = fork();
-	if($pid) {
-		$SIG{CHLD} = \&REAPER;
-		print "Forked with PID $pid\n";
-		exit 0;
-	}
+  my $pid = fork();
+  if ($pid) {
+    $SIG{CHLD} = \&REAPER;
+    print "Forked with PID $pid\n";
+    exit 0;
+  }
 
-	# child here
-	setsid();
-	setpgrp();
+  # child here
+  setsid();
+  setpgrp();
 
-	my $pidfile = "$workdir/qc.pid";
-	if($config{pidfile}) {
-		$pidfile = $config{pidfile};
-	}
+  my $pidfile = "$workdir/qc.pid";
+  if ($config{pidfile}) {
+    $pidfile = $config{pidfile};
+  }
 
 
-	open P, ">$pidfile" or die "Could not open $pidfile: $!\n";
-	print P "$$\n";
-	close P;
+  open P, ">$pidfile" or die "Could not open $pidfile: $!\n";
+  print P "$$\n";
+  close P;
 
-	$SIG{INT}  = sub { &log("finishing on request"); exit; };
-	$SIG{HUP}  = sub { &log("got SIGHUP, reloading"); exec(qw($0 daemon $workdir)); exit; };
+  $SIG{INT}  = sub { &log("finishing on request"); exit; };
+  $SIG{HUP}  = sub { &log("got SIGHUP, reloading"); exec(qw($0 daemon $workdir)); exit; };
 
-	select LOG;
-	open ERRLOG, ">$workdir/qc.stderr";
-	#*STDERR = *ERRLOG;
-	open STDERR, ">&", \*ERRLOG;
-	$| = 1;
+  select LOG;
+  open ERRLOG, ">$workdir/qc.stderr";
+  open STDERR, ">&", \*ERRLOG;
+  $| = 1;
 
-	&log("$0 started in daemon mode in $workdir with pid $$");
+  &log("$0 started in daemon mode in $workdir with pid $$");
 
-	&watch();
+  &watch();
 }
 
 sub watch {
-	my ($git) = @_;
-	my $gitmode = 1;
-	if(! $git) {
-		$git = eval { Git::Repository->new( work_tree => $config{repository} ); };
-	
-		&log("\$\@: <$@>");
-	
-		if($@ || ! -d "$config{repository}/.git") {
-			print STDERR "$config{repository} is not a git repository!\n";
-			print STDERR "Watching in filesystem mode.\n";
-			$gitmode = 0;
-		}
+  my ($git) = @_;
+  my $gitmode = 1;
+  if (! $git) {
+    $git = eval { Git::Repository->new( work_tree => $config{repository} ); };
+
+    &log("\$\@: <$@>");
+
+    if ($@ || ! -d "$config{repository}/.git") {
+      print STDERR "$config{repository} is not a git repository!\n";
+      print STDERR "Watching in filesystem mode.\n";
+      $gitmode = 0;
+    }
 
 
-	}
-	if($gitmode) {
-		&log("gitwatch");
-		&gitwatch($git);
-	}
-	else {
-		&log("fswatch");
-		&fswatch();
-	}
+  }
+  if ($gitmode) {
+    &log("gitwatch");
+    &gitwatch($git);
+  }
+  else {
+    &log("fswatch");
+    &fswatch();
+  }
 }
 
 sub setlast {
-	open LAST, ">${workdir}/.last" or die "Could not write to ${workdir}/.last: $!\n";
-	print LAST "0\n";
-	close LAST;
+  open LAST, ">${workdir}/.last" or die "Could not write to ${workdir}/.last: $!\n";
+  print LAST "0\n";
+  close LAST;
 }
 
 sub fswatch {
-	if(! -e "${workdir}/.last") {
-		&setlast;
-	}
-	while (1) {
-		open FIND, "find $config{repository} -newer $workdir/.last|" or die "Could not execute find: $!\n";
-		my $found = <FIND>;
-		close FIND;
-		if($found) {
-			&log("observed changes in $config{repository}, generating site");
-			&generate;
-			&setlast;
-		}
-		sleep 60;
-	}
+  if (! -e "${workdir}/.last") {
+    &setlast;
+  }
+  while (1) {
+    open FIND, "find $config{repository} -newer $workdir/.last|" or die "Could not execute find: $!\n";
+    my $found = <FIND>;
+    close FIND;
+    if ($found) {
+      &log("observed changes in $config{repository}, generating site");
+      &generate;
+      &setlast;
+    }
+    sleep 60;
+  }
 }
 
 sub gitwatch {
-	my ($git) = @_;
-	while (1) {
-		eval { $git->run(qw(remote update)); };
-		if($@) {
-			&log("git remote update failed: $@");
-		}
-		else {
-			my $status;
-			eval { $status = $git->run(qw(diff master origin/master)); };
-			if($@) {
-				&log("git diff master origin/master failed: $@");
-			}
-			else {
-				if($status =~ /diff \-\-git/) {
-					&log("observed changes in $config{repository} on master, pulling");
-					eval {$git->run(qw(pull));}; 
-					if(! $@) {
-						&log("git pull done. generating site");
-						&generate;
-					}
-					else {
-						&log("git pull failed with: $@");
-					}
-				}
-			}
-		}
-		sleep 60;
+  my ($git) = @_;
+  while (1) {
+    eval { $git->run(qw(remote update)); };
+    if ($@) {
+      &log("git remote update failed: $@");
+    }
+    else {
+      my $status;
+      eval { $status = $git->run(qw(diff master origin/master)); };
+      if ($@) {
+	&log("git diff master origin/master failed: $@");
+      }
+      else {
+	if ($status =~ /diff \-\-git/) {
+	  &log("observed changes in $config{repository} on master, pulling");
+	  eval {$git->run(qw(pull));}; 
+	  if (! $@) {
+	    &log("git pull done. generating site");
+	    &generate;
+	  }
+	  else {
+	    &log("git pull failed with: $@");
+	  }
 	}
+      }
+    }
+    sleep 60;
+  }
 }
 
 sub log {
-	my $msg = shift;
-	chomp $msg;
-	if($command eq 'daemon') {
-		my $time = scalar localtime;
-		print "$time [$$] $msg\n";
-	}
-	else {
-		print "$msg\n";
-	}
+  my $msg = shift;
+  chomp $msg;
+  if ($command eq 'daemon') {
+    my $time = scalar localtime;
+    print "$time [$$] $msg\n";
+  }
+  else {
+    print "$msg\n";
+  }
 }
 
 no strict 'subs';
@@ -896,17 +875,17 @@ sub REAPER {
   while (($child = waitpid(-1,WNOHANG)) > 0) {
     $Kid_Status{$child} = $?;
   }
-  $SIG{CHLD} = \&REAPER;  # still loathe SysV
+  $SIG{CHLD} = \&REAPER;	# still loathe SysV
 }
 
 
 __DATA__
 begin 644 IGNORE
 M4$L#!`H``````#I284$````````````````,`!P`<'5B;&EC7VAT;6PO550)
-M``-`/I)0L(BB4'5X"P`!!.D#```$Z0,``%!+`P0*```````Z4F%!````````
-M````````$``<`'!U8FQI8U]H=&UL+V-S<R]55`D``T`^DE"PB*)0=7@+``$$
+M``-`/I)0/]FD4'5X"P`!!.D#```$Z0,``%!+`P0*```````Z4F%!````````
+M````````$``<`'!U8FQI8U]H=&UL+V-S<R]55`D``T`^DE`_V:10=7@+``$$
 MZ0,```3I`P``4$L#!!0`"``(`#I284$``````````.0W```H`!P`<'5B;&EC
-M7VAT;6PO8W-S+V)O;W1S=')A<"UR97-P;VYS:79E+F-S<U54"0`#0#Z24.=1
+M7VAT;6PO8W-S+V)O;W1S=')A<"UR97-P;VYS:79E+F-S<U54"0`#0#Z24+"(
 MHE!U>`L``03I`P``!.D#``#M6]^/W+81?O=?P9QA('9/.I*B1'&-&&[3/`0(
 M^M#V+<B#=J6[%:R5!$EWMW:0_[U#_5A)Y$B[YPW:%,@EL+WBQX_#X7`XGXY[
 M]^Z;5^0=^5M1-'53127Y9U*715ZG3PEYXBYU/6C6B.^+\G.5/NP;PBGCY-_/
@@ -971,7 +950,7 @@ M^_XM&?\`-?OV]BQB.11^]Q&L</H]1Y@5)=:RNN5CEG5UR7J!8+V>FE)9(>,:
 M%<KPXJ\/`)TX89SG\0L^9O$$N;'_MQ'#I^PT+?&Z-+=6WUU^"Q__Q91:^"+'
 MTD1U7C6^6S*==O\5$^2K-?\!4$L'"/,<`:_G"@``Y#<``%!+`P04``@`"``Z
 M4F%!``````````#JAP$`(0`<`'!U8FQI8U]H=&UL+V-S<R]B;V]T<W1R87`N
-M;6EN+F-S<U54"0`#0#Z24.=1HE!U>`L``03I`P``!.D#``#M?=N2XS:2Z+N_
+M;6EN+F-S<U54"0`#0#Z24+"(HE!U>`L``03I`P``!.D#``#M?=N2XS:2Z+N_
 M@M$.A]UM2<.;KAWNV#F>B=WS,'XY^W`B/#X1E`B5N&:),B5UNZVH?S^X$PDD
 M0%*N\GIBJS7CDH#,1"*1"21NB:*]5+N:3(IS59))22Y%59\G^^IA5YPN57-D
 M7Z\MF>R;YD+:R8$4)?OST#;7T^18?)R<R8[!W<KJ?*J+SYMMW>Q^?O_T17$M
@@ -1312,17 +1291,17 @@ MFJSB;!G4M`7U/Y>!7DSF![*\`AZF:Q8TKFU*P.XR%2G)EG@D?]?#E/_K;^GW
 MR+.0_>])_CW[^RK_VQU/02Z^_WZ1YZ-><63'6;[/X1V/GC.$Z/NU/8<(?3BC
 MP:W+DQC0?^_=B_\/4$L'"$I)5XN`.P``ZH<!`%!+`P04``@`"``Z4F%!````
 M```````Y````&0`<`'!U8FQI8U]H=&UL+V-S<R]L;V-A;"YC<W-55`D``T`^
-MDE#G4:)0=7@+``$$Z0,```3I`P``X\K,35>HYE)02,HO2DDMLE(PL.:JY>+B
+MDE"PB*)0=7@+``$$Z0,```3I`P``X\K,35>HYE)02,HO2DDMLE(PL.:JY>+B
 MTBM/S<F!2"0F9Z<7Y9?FI5@I**>!`4@)`%!+!PB?E4N%,0```#D```!02P,$
 M%``(``@`.E)A00``````````/@$``!<`'`!P=6)L:6-?:'1M;"]F879I8V]N
-M+FEC;U54"0`#0#Z24.=1HE!U>`L``03I`P``!.D#``!C8&`$0@$!!C#08&1@
+M+FEC;U54"0`#0#Z24+"(HE!U>`L``03I`P``!.D#``!C8&`$0@$!!C#08&1@
 M$`/10`P24@!B1@86L-P!!DSP__]_AFH0`TA40QG54,[>O7N!5#7#?[!"D%H(
 MXS^"`])/7_`!7<`XY\_^]Q+/KK_^\.TV`\.OEPQ,/PXGYOQA+DG]P>2<_X&I
 M2.$!8\R%!\R"#,_X]S]3EV=@8O_/P-;^WZCA\7_#!P!02P<(S6']](<````^
 M`0``4$L#!`H``````#I284$````````````````/`!P`<'5B;&EC7VAT;6PO
-M:G,O550)``-`/I)0L(BB4'5X"P`!!.D#```$Z0,``%!+`P04``@`"``Z4F%!
+M:G,O550)``-`/I)0/]FD4'5X"P`!!.D#```$Z0,``%!+`P04``@`"``Z4F%!
 M``````````"IPP``&P`<`'!U8FQI8U]H=&UL+VIS+V)O;W1S=')A<"YJ<U54
-M"0`#0#Z24.=1HE!U>`L``03I`P``!.D#``#M/6M3&TF2W_D598;8;ME"X)G;
+M"0`#0#Z24+"(HE!U>`L``03I`P``!.D#``#M/6M3&TF2W_D598;8;ME"X)G;
 MV#W&V(%MYH8[#)QA=FX":S8:J8$>"[56W3)F9[G??IGUS*RJU@.!U[>!(W8'
 M=5=E965E53XK>^.IV%[\WXIX*L[*LJ[J<39:A_\;5D5=E,/.;Y7X]&UGL_,=
 MMKBLZ]'6QD9]7=1U/NY<%/7EY*S3*Z\V;-^-W[)/6=4;%Z.Z<UE?#;YQL"H$
@@ -1526,7 +1505,7 @@ M:9'`?VK3^I2O8$N9E-K!L27^K'@,F`=O.DX&MK2'71T60<6KBI.!KNZ!(+#7
 MH'CY(A,J=_8;;)'!_^!ATH":%TIS7D//A;U4IB$)KLF2X90T08@-](9/L-')
 MM)MC:LWLYC[D'O"9)T*G?`E#YEY8/N'?T7`+'HO0_1]02P<(2ZZ6R(@C``"I
 MPP``4$L#!!0`"``(`#I284$``````````%L)```7`!P`<'5B;&EC7VAT;6PO
-M:G,O:'1M;#4N:G-55`D``T`^DE#G4:)0=7@+``$$Z0,```3I`P``E59M;]LV
+M:G,O:'1M;#4N:G-55`D``T`^DE"PB*)0=7@+``$$Z0,```3I`P``E59M;]LV
 M$/[>7T&S0R+%G.RT:S_(45,T6]8!;3$@'?8A2P>*HB0F%*E1E%?7U'_?42^V
 MX[4#!AB2R#O>R\.[Y[PXFZ&W']^_>X%N2K%&Z]KPY]%+Y-!KFE/S0!OT^CZC
 MTFH%'UK]J3B5Z+7A%:B\_^7CXN=?WSU#[P3CJN'9$X1^4TQ78*2!)6IT:QB/
@@ -1555,7 +1534,7 @@ M_D9I)M#`'"BCEO8/*1J+1JI">ZI"`U6A@:K00%5HH"KD&QY5W`N`M9!N+5P;
 MJHTN_-\--+(8:MH*-#?(BHJCGJHP&9D3`AZ_9DDR.R<'S#^*QM4@]LC$&$"@
 MK;2#D0G+^*%;C7212/(`M08`V5(T9.*7\,D_4$L'"*Z9*P&S!```6PD``%!+
 M`P04``@`"``Z4F%!```````````0R`,`&``<`'!U8FQI8U]H=&UL+VIS+VIQ
-M=65R>2YJ<U54"0`#0#Z24.=1HE!U>`L``03I`P``!.D#``"L6WMSVT:2_YOZ
+M=65R>2YJ<U54"0`#0#Z24+"(HE!U>`L``03I`P``!.D#``"L6WMSVT:2_YOZ
 M%&/:%0,6"5I.-HDERSH_Y(OV_,A9WO->2<P61`Y)V"#``*!HQ?)WOU]WSPLD
 MI>2NKN+8!&:FI[NGWST8/+BC/OWG4E=7ZG(O^2G94Y]^IZ=D5,[5M7THJ^D@
 MST:ZJ+5Z,-B))LMBU&1E$:E55HS+54\MB[&>9(4>JUA]W=D9#-0_,+>9:34J
@@ -3160,33 +3139,33 @@ M(]B?!1V8BU"EYAS695AL_:[5'8J?/:2!<D:+`5=+]5"5/:#!O_-92L]A>$L.
 M"B+:VH%>[7&UG"T(;30\/>?HP="VT$>DU`'BOXCN*"7T<,<C>_+2B=5!Q!D^
 MX8R6TE]*66"!0N%%CV<7,)Q1X"](]BX2[G98W!2:7N]F+Z8C##OZOU!+!PC)
 MGL/DS!D!`!#(`P!02P,$"@``````.E)A00````````````````<`'`!S;W5R
-M8V4O550)``-`/I)0L(BB4'5X"P`!!.D#```$Z0,``%!+`P0*```````Z4F%!
-M````````````````$P`<`'-O=7)C92\P,2U0<F]J96-T<R]55`D``T`^DE"P
-MB*)0=7@+``$$Z0,```3I`P``4$L#!!0`"``(`#I284$``````````"L````?
-M`!P`<V]U<F-E+S`Q+5!R;VIE8W1S+U-O;65T:&EN9RYM9%54"0`#0#Z24.=1
+M8V4O550)``-`/I)0/]FD4'5X"P`!!.D#```$Z0,``%!+`P0*```````Z4F%!
+M````````````````$P`<`'-O=7)C92\P,2U0<F]J96-T<R]55`D``T`^DE`_
+MV:10=7@+``$$Z0,```3I`P``4$L#!!0`"``(`#I284$``````````"L````?
+M`!P`<V]U<F-E+S`Q+5!R;VIE8W1S+U-O;65T:&EN9RYM9%54"0`#0#Z24+"(
 MHE!U>`L``03I`P``!.D#``!35@C.STTMR<C,2U<H*,K/2DTNX>(*SR_*!@GD
 MYRD4PV3UN`!02P<(ZG:J1"0````K````4$L#!!0`"``(`#I284$`````````
 M`#H````;`!P`<V]U<F-E+S`Q+5!R;VIE8W1S+VEN9&5X+FUD550)``-`/I)0
-MYU&B4'5X"P`!!.D#```$Z0,``%-6\*U4*"C*STI-+E$H2$Q/Y>+R2"U*54@$
+ML(BB4'5X"P`!!.D#```$Z0,``%-6\*U4*"C*STI-+E$H2$Q/Y>+R2"U*54@$
 MXN+\W%287+&"IWJN0GE^479F7KI"?IX>%P!02P<(!'X$1C0````Z````4$L#
 M!`H``````#I284$````````````````/`!P`<V]U<F-E+S`R+4)L;V<O550)
-M``-`/I)0L(BB4'5X"P`!!.D#```$Z0,``%!+`P04``@`"``Z4F%!````````
+M``-`/I)0/]FD4'5X"P`!!.D#```$Z0,``%!+`P04``@`"``Z4F%!````````
 M```5````'P`<`'-O=7)C92\P,BU";&]G+S)N9"!";&]G(%!O<W0N;6155`D`
-M`T`^DE#G4:)0=7@+``$$Z0,```3I`P``<\Q+42C)R"Q6`*+$O/R2C-0B/2X`
+M`T`^DE"PB*)0=7@+``$$Z0,```3I`P``<\Q+42C)R"Q6`*+$O/R2C-0B/2X`
 M4$L'"%RY_&@5````%0```%!+`P04``@`"``Z4F%!```````````=````(0`<
-M`'-O=7)C92\P,BU";&]G+T9I<G-T($)L;V<@4&]S="YM9%54"0`#0#Z24.=1
+M`'-O=7)C92\P,BU";&]G+T9I<G-T($)L;V<@4&]S="YM9%54"0`#0#Z24+"(
 MHE!U>`L``03I`P``!.D#```+R<@L5@"BDHQ4A;3,HN(2A:2<_'2%@OSB$CTN
 M`%!+!PAW$6OV'0```!T```!02P,$%``(``@`D%)A00``````````9`````\`
-M'`!S;W5R8V4O86)O=70N;6155`D``]\^DE#G4:)0=7@+``$$Z0,```3I`P``
+M'`!S;W5R8V4O86)O=70N;6155`D``]\^DE"PB*)0=7@+``$$Z0,```3I`P``
 M4U9P3,HO+5$HR<@L5BC.+$GEXG)/S4LM2BQ)35$HSRS)4(@.+,U,+<FI5'#.
 MSTO+3$G-*XG5R"@I*2BVTM=/!RHH3=)+SL_5#_'Q]'-Q]=.'JM:%J];D`@!0
 M2P<(V_H#7ED```!D````4$L#!!0`"``(`()284$``````````%4````/`!P`
-M<V]U<F-E+VEN9&5X+FUD550)``/#/I)0YU&B4'5X"P`!!.D#```$Z0,``!7*
+M<V]U<F-E+VEN9&5X+FUD550)``/#/I)0L(BB4'5X"P`!!.D#```$Z0,``!7*
 M00J`(!`%T+VG^-"BG9?H!%'06NR703KAC(2WC[:/-V#C'243)L@=A2_F"6K!
 MKH@GG'1N3:P<%44,N<7T5R7Q,U1PA.JQ6.BP5KA[]P%02P<([,M+JT\```!5
 M````4$L#!`H``````#I284$````````````````*`!P`=&5M<&QA=&5S+U54
-M"0`#0#Z24+"(HE!U>`L``03I`P``!.D#``!02P,$%``(``@`45AA00``````
-M````6@4``!(`'`!T96UP;&%T97,O871O;2YT<&Q55`D``[I(DE#G4:)0=7@+
+M"0`#0#Z24#_9I%!U>`L``03I`P``!.D#``!02P,$%``(``@`45AA00``````
+M````6@4``!(`'`!T96UP;&%T97,O871O;2YT<&Q55`D``[I(DE"PB*)0=7@+
 M``$$Z0,```3I`P``C5313MLP%'U>O\++%&G3:-QV0J)5&E0!TW@!"=C#5O'@
 M)+>--<>.;&>E?[]K.Z1AP)A?TMR><^[U/:==Q^3[[04IF042WZ>G#[4@OT$;
 MKN0RFB:3B(`L5,GE=AE=WEZ/3TZ.Y^-I=)J-T@U`.2*$($6:9519VRPHW>UV
@@ -3202,7 +3181,7 @@ M>PH#=]&LXF4),J7A[:!,_Y9.FS87W%3/;?)]7.%?-AW8!\57;/\OO:'M0>V5
 MK+VP[3YX@?@\QL^W/HQ^8&$CB\8_C?_[]=GYZFZU'KWK8+U2AW[,#)[[>_RY
 M=/5.%VWHHX3,BZMS1TC]_T4V^@-02P<(Z;78H%$"``!:!0``4$L#!!0`"``(
 M`)A884$``````````)8"```2`!P`=&5M<&QA=&5S+V)L;V<N='!L550)``-`
-M29)0YU&B4'5X"P`!!.D#```$Z0,``'V1VTH#,1"&K[=/,41"%747H5=ENZ`]
+M29)0L(BB4'5X"P`!!.D#```$Z0,``'V1VTH#,1"&K[=/,41"%747H5=ENZ`]
 MT&)M0?%*O$@WL]U@-@G9V,/;FVR[6O%`+B;\F?^;R<P+A=EB.'\>C4$HCKO8
 M&0GTM?-"X6Z^'-Y#Q80*0N25R?)Q?#N<@M&U\[8FULUCRL4&<LGJ>D"V*"7)
 M.E&4EKTL95!:+`;$VW.M"K&.5ZS&=RN\SVL!$:^D7AOF2B^1K!5S9IS0H7::
@@ -3212,7 +3191,7 @@ M8M0.;38!8W%S,)V.XZB23.$6[6&8X:N_`!3NW$_`4269EOPOP+?;8:,ELI#N
 M)8!4"O7VSX:2L)JD0.0)<[J*=Y4D8%$."),.K?(S(N"$"_/^\M?"82-Z`@0?
 M!()/W!N?QXR1(F=AN0WTLH$FV4FO'U!+!PBS9I\_:`$``)8"``!02P,$%``(
 M``@`/$]E00``````````I`H``!,`'`!T96UP;&%T97,O:6YD97@N='!L550)
-M``.4?Y=0YU&B4'5X"P`!!.D#```$Z0,``*U6WV_;-A!^GO^*J[;DJ9+J`AG2
+M``.4?Y=0L(BB4'5X"P`!!.D#```$Z0,``*U6WV_;-A!^GO^*J[;DJ9+J`AG2
 M1!)0."[B(4VZ)GL8@CQ0TCEB2HDJ2<DUL#]^1TFV94=.'6Q^L*C[\=WQ^-U1
 M]T?PU^T44F80CAY&P9N+F\G=WU^FD)E<1*/`/D"PXC%T4G2B$4#PQG5!RTHE
 M>$96ICSS_5A*HQ?,))F7R-S7@N!\<-W&/D.6V@4$.1K6N+CXO>)UZ$QD8;`P
@@ -3235,10 +3214,10 @@ M]T[TT:X;0O[2=^N^LA:+A9<RNH$*+T7_SXJC$<N)Q4OI&G*BS[3!9K:F4&E[
 M205QU%G!VBSPX^AYA%^-+&F&5DRI<Z#U5E,$?KFI?+\FFY&Y=W:NYVKW&'4+
 M>S?Z7C-YW/658.^T!JV]-P*__0C]%U!+!PC>V7!FK@,``*0*``!02P,$%``(
 M``@`.E)A00``````````70```!(`'`!T96UP;&%T97,O<&%G92YT<&Q55`D`
-M`T`^DE#G4:)0=7@+``$$Z0,```3I`P``BU95\/1S]@EU<57(S$M)K=`K*<A1
+M`T`^DE"PB*)0=7@+``$$Z0,```3I`P``BU95\/1S]@EU<57(S$M)K=`K*<A1
 M4(WEBE95</+Q=_96R$W,S(,*).?GE:3FE4!YKGXN*`HS4A-34HM0)`%02P<(
 M,AIS)SX```!=````4$L#!!0`"``(`)A884$``````````%$!```2`!P`=&5M
-M<&QA=&5S+W!O<W0N='!L550)``-`29)0YU&B4'5X"P`!!.D#```$Z0,``%60
+M<&QA=&5S+W!O<W0N='!L550)``-`29)0L(BB4'5X"P`!!.D#```$Z0,``%60
 MP4H#,1"&S]NG&"*A"II%Z&G)[L&VH%CKH7@J'K*;;#>034(2M7U[)W4K2@X#
 MWV2^?Y@]A:?M<O.V6H.V4AU9\@;H^VQ/X6'SNGR&46B;`9?Z$SHC8JS)ES*&
 M-+."#XN&"QB"ZFN"$YVSO3ZP5D3U$31.(?,N)M8:=_`B#8A(<X&=\$F[+.>E
