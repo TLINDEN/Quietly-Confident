@@ -5,7 +5,7 @@
 # by TLINDEN <tlinden@cpan.org>
 # http://www.daemon.de/QuietlyConfident
 
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 
 
 package Quietly::Confident::Role;
@@ -133,8 +133,16 @@ has type    => ( is => 'rw' );
 has date    => ( is => 'rw' );
 has by      => ( is => 'rw' );
 has raw     => ( is => 'rw' );
-has isindex => ( is => 'rw' );
 
+sub isindex {
+  my $self = shift;
+  if ($self->ioall->filename =~ /^index\.(md|html|htm)$/) {
+    return 1;
+  }
+  else {
+    return 0;
+  }
+}
 
 sub realpath {
   my $self = shift;
@@ -296,6 +304,163 @@ sub basepath {
   return $out;
 }
 
+
+1;
+
+######################################
+
+package Quietly::Confident::Webobj;
+use Moo;
+use IO::All -utf8;
+
+has content => ( is => 'rw' );
+has type    => ( is => 'rw' );
+has len     => ( is => 'rw' );
+has ioall   => ( is => 'rw' );
+has path    => ( is => 'rw' );
+has exists  => ( is => 'rw' );
+
+
+sub BUILD {
+  my $self = shift;
+
+  $self->ioall(io($self->path));
+
+  if ($self->ioall->exists && $self->ioall->is_readable) {
+
+    if ($self->ioall->is_dir) {
+      $self->ioall(io->catfile($self->ioall->name, "index.html"));
+    }
+
+    my %mime = qw(html text/html css text/css js text/javascript jpg image/jpeg png image/png ico image/ico);
+
+    my ($suf) = $self->ioall->name =~ /\.([^\.]*)$/;
+    if (exists $mime{$suf}) {
+      $self->type($mime{$suf});
+    }
+    else {
+      $self->type($mime{'html'});
+    }
+
+    $self->len($self->ioall->size);
+
+    if ($self->type =~ /image/) {
+      my ($data, $buffer);
+      open BIN, "<" . $self->allio->name;
+      binmode BIN;
+      while (sysread(BIN, $buffer, 1024)) {
+	$data .= $buffer;
+      }
+      close BIN;
+      $self->content($data);
+    }
+    else {
+      my $c = $self->ioall->slurp;
+      $self->content($c);
+    }
+
+    $self->exists(1);
+  }
+  else {
+    $self->exists(0);
+  }
+}
+
+sub serve {
+  my $self = shift;
+  if ($self->exists) {
+    print "HTTP 200: " . $self->path . "\n";
+    my $out = "HTTP/1.0 200 OK\r\n";
+    $out .= "Content-Type: "   . $self->type . "\r\n";
+    $out .= "Content-Length: " . $self->len . "\r\n";
+    $out .= "Last-Modified: " . $self->ioall->mtime . "\r\n";
+    $out .= "Date: " . scalar localtime(time) .  "\r\n";      # FIXME: Use RFC Date
+    $out .= "Connection: close\r\n\r\n";
+    $out .= $self->content;
+    return $out;
+  }
+  else {
+    print "HTTP 404: " . $self->path . "\n";
+    return "HTTP/1.0 404 Not Found\r\n\r\n404 not found: " . $self->path . "\r\n";
+  }
+}
+
+
+1;
+######################################
+
+package Quietly::Confident::Server;
+use Moo;
+use IO::All -utf8;
+use Data::Dumper;
+
+has host  => ( is => 'rw' );
+has port  => ( is => 'rw' );
+has base  => ( is => 'rw' );
+has cache => ( is => 'rw' );
+
+sub BUILD {
+  my $self = shift;
+  $self->cache({});
+}
+
+sub serve {
+  my $self = shift;
+
+  my $listen = sprintf "%s:%s", $self->host, $self->port;
+
+  io($listen)->fork->accept->(
+       sub {
+	 my $sock = shift;
+	 return unless ($_);
+	 if (/^GET \/(.*) /) {
+	   my $path = "/$1";
+
+	   $path =~ s#$self->base##;
+	   $path =~ s#^/##;
+
+	   if (! $path) {
+	     $path = "index.html";
+	   }
+
+	   if (! exists $self->cache->{$path}) {
+	     $self->cache->{$path} = Quietly::Confident::Webobj->new(path => $path);
+	   }
+
+	   $sock->write($self->cache->{$path}->serve);
+	   $sock->close;
+	 }
+       }
+  );
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #####################################
 
 package main;
@@ -400,6 +565,7 @@ sub generate {
   }
 
   &genmenus($root);
+  #print Dumper(\%menu);
   &process($root);
 }
 
@@ -536,6 +702,8 @@ sub processblog {
 sub process {
   my $gitdir = shift;
 
+  #print "GITDIR: " .  $gitdir->dstpath  . " => " . $gitdir->hasindex . "\n";
+
   my $dir    = "$config{public}/" . $gitdir->dstpath;
 
   if (! -d "$dir" ) {
@@ -556,7 +724,8 @@ sub process {
     my $title = $gitfile->caption;
     if ($gitdir->level == 1  && $gitfile->isindex) {
       $title = $config{sitetitle};
-    } elsif ($gitfile->isindex) {
+    }
+    elsif ($gitfile->isindex) {
       $title = $gitdir->caption;
     }
 
@@ -572,7 +741,7 @@ sub process {
   }
 
   if (! $gitdir->hasindex) {
-    &log( "Processing: " . $gitdir->indexpath );
+    &log( "Processing INDEX: " . $gitdir->indexpath );
     $t->process( 'page.tpl', { config => \%config,
 			       basepath => $gitdir->htmlpath, 
 			       level => $gitdir->level, 
@@ -633,24 +802,24 @@ sub iterate {
 						  config => \%config,
 						  type   => &type($file),
 						  date   => $log->committer_localtime,
-						  by     => $log->committer_name );
+						  by     => $log->committer_name,
+						);
       }
       else {
-				# not part of git, but use it if local option is set
+	# not part of git, but use it if local option is set
 	if ($config{local}) {
 	  $gitfile = Quietly::Confident::File->new( ioall  => $file,
 						    config => \%config,
 						    type   => &type($file),
 						    date   => $file->mtime,
-						    by     => (getpwuid($file->uid))[0] );
-	  #print "ioall file: " . $file->absolute->pathname ."\n";
+						    by     => (getpwuid($file->uid))[0],
+						  );
 	}
       }
       if ($gitfile) {
 	$gitdir->hasfiles(1);
-	if ($file =~ /^index\.(md|html|htm)$/) {
+	if ($file->filename =~ /^index\.(md|html|htm)$/) {
 	  $gitdir->hasindex(1);
-	  $gitfile->isindex(1);
 	}
 	if ($gitfile->type eq 'image') {
 	  push @images, $gitfile;
@@ -673,9 +842,9 @@ Usage: $0 <command> [<working directory>]
 Avalable commands are:
  init               - initialize a new site
  generate           - generate static content from repository
- serve [[ip]:port]  - serve site via HTTP. defaults to $hostname:8080
+ serve [[ip]:port]  - serve site via HTTP. defaults to hostname:8080
  daemon             - detach from terminal and run in background
- watch              - watch for updates, same as daemon but in forreground
+ watch              - watch for updates, same as daemon but in foreground
 
 );
   exit 1;
@@ -727,10 +896,16 @@ sub serve {
   if ($param) {
     ($host, $port) = split /:/, $param;
   }
-  my $httpd = HTTP::Server::Brick->new(host => $host, port => $port);
-  $httpd->mount('/' => { path => $config{public}});
-  $httpd->start;
+
+
+
+  chdir  $config{public};
+
+  &log("listening on $host:$port");
+  my $server = Quietly::Confident::Server->new(host => $host, port => $port, base => $config{baseurl});
+  $server->serve;
 }
+
 
 sub daemon {
   $workdir->chdir;
@@ -744,9 +919,17 @@ sub daemon {
 
   my $pid = fork();
   if ($pid) {
+    # parent
     $SIG{CHLD} = \&REAPER;
     print "Forked with PID $pid\n";
     exit 0;
+  }
+  else {
+    # child
+    # remove the SIGCHLD handler if child, because
+    # we don't fork ourselfes, System::Command handles
+    # this already.
+    delete $SIG{CHLD};
   }
 
   # child here
@@ -782,9 +965,7 @@ sub watch {
   if (! $git) {
     $git = eval { Git::Repository->new( work_tree => $config{repository} ); };
 
-    &log("\$\@: <$@>");
-
-    if ($@ || ! -d "$config{repository}/.git") {
+    if ($@) {
       print STDERR "$config{repository} is not a git repository!\n";
       print STDERR "Watching in filesystem mode.\n";
       $gitmode = 0;
